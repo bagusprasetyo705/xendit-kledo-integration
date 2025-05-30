@@ -2,7 +2,11 @@
 import NextAuth from "next-auth";
 
 export const authOptions = {
-  secret: process.env.NEXTAUTH_SECRET, // Critical for production
+  secret: process.env.NEXTAUTH_SECRET,
+  trustHost: true, // Critical for Vercel
+  cookies: {
+    secure: true, // Force HTTPS cookies
+  },
   providers: [
     {
       id: "kledo",

@@ -1,4 +1,7 @@
 /** @type {import('next').NextConfig} */
-const nextConfig = {};
+const nextConfig = {
+  output: 'standalone', // For proper serverless function packaging
+  // Add other configurations here if needed
+};
 
-export default nextConfig;
+module.exports = nextConfig;
