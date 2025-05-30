@@ -2,6 +2,7 @@
 import NextAuth from "next-auth";
 
 export const authOptions = {
+  secret: process.env.NEXTAUTH_SECRET, // Critical for production
   providers: [
     {
       id: "kledo",
@@ -33,6 +34,9 @@ export const authOptions = {
       }
       return token;
     },
+  },
+  cookies: {
+    secure: process.env.NODE_ENV === "production", // Required for HTTPS
   },
 };
 
