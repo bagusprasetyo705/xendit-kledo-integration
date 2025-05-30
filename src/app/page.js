@@ -11,7 +11,7 @@ export default async function Dashboard() {
 
   return (
     <div className="max-w-4xl mx-auto p-6">
-      <h1 className="text-2xl font-bold mb-6">Xendit to Kledo Integration</h1>
+      <h1 className="text-2xl font-bold mb-6">Xendit to Kledo Integration V1</h1>
       
       {session ? (
         <div className="space-y-6">
