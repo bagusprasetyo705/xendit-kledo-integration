@@ -1,13 +1,10 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  output: 'standalone', // For proper serverless function packaging
-  // Optional: Add experimental features if needed
+  output: 'standalone',
   experimental: {
-    serverActions: true,
+    serverActions: true, // Remove if causing issues
     optimizePackageImports: ['@xendit/xendit-node']
-  },
-  // Enable React Strict Mode
-  reactStrictMode: true
+  }
 };
 
 export default nextConfig;
