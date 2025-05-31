@@ -2,7 +2,7 @@
 const nextConfig = {
   output: 'standalone',
   experimental: {
-    serverActions: true, // Remove if causing issues
+    // Remove serverActions if not needed, or configure properly
     optimizePackageImports: ['@xendit/xendit-node']
   }
 };

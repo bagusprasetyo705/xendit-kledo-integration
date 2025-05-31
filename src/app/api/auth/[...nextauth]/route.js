@@ -1,17 +1,10 @@
 // app/api/auth/[...nextauth]/route.js
 import NextAuth from "next-auth";
+import KledoProvider from "./kledo-provider"; // Create this file
 
 export const authOptions = {
-  secret: process.env.NEXTAUTH_SECRET,
-  trustHost: true, // Critical for Vercel
-  cookies: {
-    secure: true, // Force HTTPS cookies
-  },
   providers: [
-    {
-      id: "kledo",
-      name: "Kledo",
-      type: "oauth",
+    KledoProvider({
       clientId: process.env.KLEDO_CLIENT_ID,
       clientSecret: process.env.KLEDO_CLIENT_SECRET,
       authorization: {
@@ -21,28 +14,11 @@ export const authOptions = {
           redirect_uri: process.env.KLEDO_REDIRECT_URI,
         },
       },
-      token: {
-        url: `${process.env.KLEDO_API_BASE_URL}/oauth/token`,
-        async request(context) {
-          // Your token request implementation
-        },
-      },
-    },
+    }),
   ],
-  callbacks: {
-    async jwt({ token, account }) {
-      if (account) {
-        token.accessToken = account.access_token;
-        token.refreshToken = account.refresh_token;
-        token.expiresAt = Math.floor(Date.now() / 1000) + account.expires_in;
-      }
-      return token;
-    },
-  },
-  cookies: {
-    secure: process.env.NODE_ENV === "production", // Required for HTTPS
-  },
+  secret: process.env.NEXTAUTH_SECRET,
+  debug: process.env.NODE_ENV === 'development'
 };
 
-export const handler = NextAuth(authOptions);
+const handler = NextAuth(authOptions);
 export { handler as GET, handler as POST };
