@@ -1,13 +1,14 @@
-// app/page.js
+// app/dashboard/page.js
 'use client';
+import { useSession } from "next-auth/react";
 import { useState } from "react";
-import SyncStatus from "../components/SyncStatus";
+import SyncStatus from "@/components/SyncStatus";
 import Link from "next/link";
 
 export default function Home() {
+  const { data: session, status } = useSession();
   const [isLoading, setIsLoading] = useState(false);
   const [syncResult, setSyncResult] = useState(null);
-  const [isAuthenticated, setIsAuthenticated] = useState(false); // Temporary mock auth
   const [transfers, setTransfers] = useState([
     {
       id: 1,
@@ -43,6 +44,8 @@ export default function Home() {
       setSyncResult(result);
       
       if (result.success) {
+        // In a real app, you'd refetch the transfers from your database
+        // For now, we'll just show the sync result
         console.log('Sync completed successfully');
       }
     } catch (error) {
@@ -55,29 +58,30 @@ export default function Home() {
     }
   };
 
-  const handleLogin = () => {
-    setIsAuthenticated(true);
-  };
+  if (status === "loading") {
+    return (
+      <div className="max-w-4xl mx-auto p-6">
+        <div className="text-center py-10">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-4xl mx-auto p-6">
       <h1 className="text-2xl font-bold mb-6">Xendit to Kledo Integration V1</h1>
       
-      {isAuthenticated ? (
+      {session ? (
         <div className="space-y-6">
           {/* Connection Status */}
           <div className="bg-white p-4 rounded-lg shadow">
             <h2 className="font-semibold text-lg mb-2">Kledo Connection</h2>
             <p className="text-green-600 flex items-center">
               <span className="w-2 h-2 bg-green-500 rounded-full mr-2"></span>
-              Connected as demo@kledo.com
+              Connected as {session.user?.email || session.user?.name}
             </p>
-            <button 
-              onClick={() => setIsAuthenticated(false)}
-              className="mt-2 text-sm text-red-600 hover:text-red-800"
-            >
-              Disconnect
-            </button>
           </div>
 
           {/* Manual Sync Trigger */}
@@ -110,7 +114,7 @@ export default function Home() {
                   <div>
                     <p className="text-green-800 font-medium">✅ Sync Completed</p>
                     <p className="text-green-700 text-sm">
-                      Processed: {syncResult.processed || 0}, Successful: {syncResult.successful || 0}
+                      Processed: {syncResult.processed}, Successful: {syncResult.successful}
                     </p>
                     {syncResult.errors && syncResult.errors.length > 0 && (
                       <div className="mt-2">
@@ -138,25 +142,15 @@ export default function Home() {
         </div>
       ) : (
         <div className="text-center py-10">
-          <button 
-            onClick={handleLogin}
+          <Link 
+            href="/api/auth/signin" 
             className="bg-green-500 hover:bg-green-600 text-white px-6 py-3 rounded-lg text-lg inline-block"
           >
-            Sign in with Kledo (Demo)
-          </button>
+            Sign in with Kledo
+          </Link>
           <p className="mt-4 text-gray-600">
             Authentication required to view transfer logs
           </p>
-          <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-            <h3 className="font-semibold text-blue-800">Setup Instructions:</h3>
-            <ol className="mt-2 text-sm text-blue-700 list-decimal list-inside space-y-1">
-              <li>Copy .env.example to .env.local</li>
-              <li>Fill in your Xendit and Kledo API credentials</li>
-              <li>Configure OAuth settings in Kledo dashboard</li>
-              <li>Set up Xendit webhook URL</li>
-              <li>Deploy to Vercel with environment variables</li>
-            </ol>
-          </div>
         </div>
       )}
     </div>
