@@ -12,8 +12,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata = {
-  title: "Xendit Transaction Dashboard",
-  description: "View and monitor Xendit transactions in real-time",
+  title: "Xendit to Kledo Integration",
+  description: "Automatically sync Xendit transactions to Kledo invoices",
 };
 
 export default function RootLayout({ children }) {

@@ -4,7 +4,7 @@ export async function POST(request) {
   
   // Verify webhook signature
   if (signature !== process.env.XENDIT_WEBHOOK_TOKEN) {
-    console.log("Webhook signature verification failed");
+    console.log("❌ Webhook signature verification failed");
     console.log("Expected:", process.env.XENDIT_WEBHOOK_TOKEN);
     console.log("Received:", signature);
     return new Response("Unauthorized", { status: 401 });
@@ -30,22 +30,44 @@ export async function POST(request) {
       console.log("🎉 SUCCESSFUL PAYMENT RECEIVED!");
       console.log(`Payment of ${payload.amount} ${payload.currency} has been completed`);
       
-      // Here you could:
-      // 1. Store in database
-      // 2. Send notifications
-      // 3. Update application state
-      // 4. Trigger other business logic
-      
-      return new Response(JSON.stringify({
-        success: true,
-        message: "Payment processed successfully",
-        transaction_id: payload.id,
-        amount: payload.amount,
-        status: payload.status
-      }), { 
-        status: 200,
-        headers: { 'Content-Type': 'application/json' }
-      });
+      try {
+        // Dynamic import to avoid build issues
+        const { transferXenditToKledo } = await import("@/lib/kledo-service");
+        
+        // Transfer to Kledo
+        console.log("🔄 Transferring to Kledo...");
+        const kledoResult = await transferXenditToKledo(payload);
+        
+        console.log("✅ Successfully transferred to Kledo:", kledoResult.data?.id);
+        
+        return new Response(JSON.stringify({
+          success: true,
+          message: "Payment processed and transferred to Kledo successfully",
+          transaction_id: payload.id,
+          kledo_invoice_id: kledoResult.data?.id,
+          amount: payload.amount,
+          status: payload.status
+        }), { 
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      } catch (kledoError) {
+        console.error("❌ Failed to transfer to Kledo:", kledoError);
+        
+        // Still return success for the webhook (so Xendit doesn't retry)
+        // but log the Kledo error for manual intervention
+        return new Response(JSON.stringify({
+          success: true,
+          message: "Payment received but Kledo transfer failed",
+          transaction_id: payload.id,
+          amount: payload.amount,
+          status: payload.status,
+          kledo_error: kledoError.message
+        }), { 
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
     } else {
       console.log("ℹ️ Transaction status:", payload.status);
       return new Response(JSON.stringify({

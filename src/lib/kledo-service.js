@@ -1,6 +1,4 @@
 // lib/kledo-service.js
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { Xendit } from "xendit-node";
 
 // Initialize Xendit client
@@ -9,8 +7,59 @@ const xenditClient = new Xendit({
 });
 
 export async function getKledoAccessToken() {
-  const session = await getServerSession(authOptions);
-  return session?.accessToken;
+  // For now, return null - in production you'd implement proper token storage
+  // This could be enhanced to use cookies, database, or other secure storage
+  console.warn("Kledo access token not implemented in simplified version");
+  return null;
+}
+
+// Function to refresh access token if needed
+export async function refreshKledoAccessToken(refreshToken) {
+  try {
+    const response = await fetch(`${process.env.KLEDO_API_BASE_URL}/oauth/token`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Accept": "application/json",
+      },
+      body: new URLSearchParams({
+        grant_type: "refresh_token",
+        refresh_token: refreshToken,
+        client_id: process.env.KLEDO_CLIENT_ID,
+        client_secret: process.env.KLEDO_CLIENT_SECRET,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to refresh token: ${response.status}`);
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error("Token refresh failed:", error);
+    throw error;
+  }
+}
+
+// Function to get user profile from Kledo
+export async function getKledoProfile(accessToken) {
+  try {
+    const response = await fetch(`${process.env.KLEDO_API_BASE_URL}/user`, {
+      headers: {
+        "Authorization": `Bearer ${accessToken}`,
+        "Accept": "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to get profile: ${response.status}`);
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error("Failed to get Kledo profile:", error);
+    throw error;
+  }
 }
 
 export async function transferXenditToKledo(xenditInvoice) {
@@ -18,35 +67,30 @@ export async function transferXenditToKledo(xenditInvoice) {
     const accessToken = await getKledoAccessToken();
     
     if (!accessToken) {
-      throw new Error("No Kledo access token available");
+      throw new Error("No Kledo access token available. Please authenticate with Kledo first.");
     }
 
+    // First, let's check if we need to create a customer/contact
+    const customerData = await createOrGetKledoCustomer(xenditInvoice.payer_email, accessToken);
+    
     // Map Xendit invoice data to Kledo format
     const kledoInvoiceData = {
-      invoice_number: xenditInvoice.external_id,
-      invoice_date: new Date().toISOString().split('T')[0],
+      date: new Date().toISOString().split('T')[0], // Invoice date
       due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 30 days from now
-      contact: {
-        name: xenditInvoice.payer_email || "Xendit Customer",
-        email: xenditInvoice.payer_email || "",
-      },
+      contact_id: customerData.id, // Customer ID from Kledo
       items: [
         {
-          product_name: xenditInvoice.description || "Payment via Xendit",
-          quantity: 1,
-          unit_price: xenditInvoice.amount,
-          total: xenditInvoice.amount,
+          name: xenditInvoice.description || "Payment via Xendit",
+          price: xenditInvoice.amount,
+          qty: 1,
         }
       ],
-      subtotal: xenditInvoice.amount,
-      total: xenditInvoice.amount,
-      status: "paid", // Mark as paid since Xendit webhook confirms payment
-      payment_date: new Date().toISOString().split('T')[0],
-      notes: `Automatically created from Xendit payment. Original ID: ${xenditInvoice.id}`,
+      notes: `Automatically created from Xendit payment.\nOriginal ID: ${xenditInvoice.id}\nExternal ID: ${xenditInvoice.external_id}`,
+      tags: ["xendit", "auto-import"],
     };
 
     // Create invoice in Kledo
-    const response = await fetch(`${process.env.KLEDO_API_BASE_URL}/api/invoices`, {
+    const response = await fetch(`${process.env.KLEDO_API_BASE_URL}/invoices`, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${accessToken}`,
@@ -58,18 +102,113 @@ export async function transferXenditToKledo(xenditInvoice) {
 
     if (!response.ok) {
       const errorText = await response.text();
+      console.error("Kledo API Error:", errorText);
       throw new Error(`Kledo API error: ${response.status} ${response.statusText} - ${errorText}`);
     }
 
     const result = await response.json();
     
-    // Log successful transfer (you might want to store this in a database)
-    console.log(`Successfully transferred Xendit invoice ${xenditInvoice.external_id} to Kledo invoice ${result.data?.id}`);
+    // If invoice created successfully, mark it as paid
+    if (result.data && result.data.id) {
+      await markKledoInvoiceAsPaid(result.data.id, xenditInvoice.amount, accessToken);
+    }
+    
+    // Log successful transfer
+    console.log(`✅ Successfully transferred Xendit invoice ${xenditInvoice.external_id} to Kledo invoice ${result.data?.id}`);
     
     return result;
   } catch (error) {
-    console.error("Transfer failed:", error);
+    console.error("❌ Transfer failed:", error);
     throw error;
+  }
+}
+
+// Helper function to create or get customer in Kledo
+async function createOrGetKledoCustomer(email, accessToken) {
+  if (!email) {
+    // Return default customer or create anonymous customer
+    return { id: null, name: "Anonymous Customer" };
+  }
+
+  try {
+    // First, try to find existing customer
+    const searchResponse = await fetch(`${process.env.KLEDO_API_BASE_URL}/contacts?search=${encodeURIComponent(email)}`, {
+      headers: {
+        "Authorization": `Bearer ${accessToken}`,
+        "Accept": "application/json",
+      },
+    });
+
+    if (searchResponse.ok) {
+      const searchResult = await searchResponse.json();
+      if (searchResult.data && searchResult.data.length > 0) {
+        return searchResult.data[0]; // Return first matching customer
+      }
+    }
+
+    // Customer not found, create new one
+    const customerData = {
+      name: email.split('@')[0], // Use email prefix as name
+      email: email,
+      type: "customer",
+    };
+
+    const createResponse = await fetch(`${process.env.KLEDO_API_BASE_URL}/contacts`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+      },
+      body: JSON.stringify(customerData),
+    });
+
+    if (createResponse.ok) {
+      const result = await createResponse.json();
+      return result.data;
+    }
+
+    // If customer creation fails, return null (will create invoice without specific customer)
+    console.warn("Failed to create customer in Kledo, proceeding without customer link");
+    return { id: null, name: email };
+
+  } catch (error) {
+    console.warn("Customer lookup/creation failed:", error);
+    return { id: null, name: email || "Anonymous Customer" };
+  }
+}
+
+// Helper function to mark Kledo invoice as paid
+async function markKledoInvoiceAsPaid(invoiceId, amount, accessToken) {
+  try {
+    const paymentData = {
+      invoice_id: invoiceId,
+      amount: amount,
+      date: new Date().toISOString().split('T')[0],
+      method: "transfer", // or other payment method
+      notes: "Payment received via Xendit",
+    };
+
+    const response = await fetch(`${process.env.KLEDO_API_BASE_URL}/payments`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+      },
+      body: JSON.stringify(paymentData),
+    });
+
+    if (response.ok) {
+      const result = await response.json();
+      console.log(`✅ Marked Kledo invoice ${invoiceId} as paid`);
+      return result;
+    } else {
+      const errorText = await response.text();
+      console.warn(`⚠️ Failed to mark invoice as paid: ${errorText}`);
+    }
+  } catch (error) {
+    console.warn("Failed to mark invoice as paid:", error);
   }
 }
 
