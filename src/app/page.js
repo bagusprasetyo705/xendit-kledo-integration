@@ -15,7 +15,7 @@ export default function Home() {
     setError(null);
     
     try {
-      const response = await fetch('/api/xendit/transactions', {
+      const response = await fetch('/api/transactions', {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -27,6 +27,7 @@ export default function Home() {
       }
       
       const result = await response.json();
+      console.log('📊 Transactions fetched:', result);
       setTransactions(result.data || []);
     } catch (error) {
       setError(error.message);
@@ -91,10 +92,47 @@ export default function Home() {
       
       const result = await response.json();
       setSyncStatus(result);
+      
+      // Refresh transactions after sync
+      if (result.success) {
+        await fetchXenditTransactions();
+      }
     } catch (error) {
       setSyncStatus({ success: false, error: error.message });
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const syncSingleTransaction = async (transaction) => {
+    if (authStatus !== 'connected') {
+      alert('Please connect to Kledo first!');
+      return;
+    }
+
+    try {
+      console.log('🔄 Syncing single transaction:', transaction.id);
+      
+      const response = await fetch('/api/sync/single', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ transaction })
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        alert(`✅ Transaction ${transaction.external_id || transaction.id} synced successfully!`);
+        // Refresh transactions to update sync status
+        await fetchXenditTransactions();
+      } else {
+        throw new Error(result.error);
+      }
+    } catch (error) {
+      console.error('❌ Failed to sync transaction:', error);
+      alert(`❌ Sync failed: ${error.message}`);
     }
   };
 
@@ -275,6 +313,7 @@ export default function Home() {
           <XenditTransactionTable 
             transactions={transactions} 
             isLoading={isLoading}
+            onSyncTransaction={syncSingleTransaction}
           />
         </div>
       </div>

@@ -259,14 +259,33 @@ export async function fetchRecentTransfers() {
 
 export async function getXenditTransactions(limit = 10) {
   try {
-    // Fetch recent transactions from Xendit
-    const { Invoice } = xenditClient;
-    const invoices = await Invoice.getInvoices({
-      limit: limit,
-      statuses: ['PAID']
-    });
+    console.log("🔍 Fetching Xendit transactions...");
     
-    return invoices;
+    // Use direct API call instead of SDK to avoid issues
+    const response = await fetch(`https://api.xendit.co/v2/invoices?limit=${limit}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Basic ${Buffer.from(process.env.XENDIT_SECRET_KEY + ':').toString('base64')}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Xendit API error:', response.status, errorText);
+      throw new Error(`Xendit API error: ${response.status} ${response.statusText}`);
+    }
+
+    const invoices = await response.json();
+    console.log(`📊 Retrieved ${invoices.length} invoices from Xendit`);
+    
+    // Filter only successful/paid transactions
+    const paidInvoices = invoices.filter(invoice => 
+      invoice.status === 'SETTLED' || invoice.status === 'PAID'
+    );
+    
+    console.log(`✅ Found ${paidInvoices.length} paid invoices`);
+    return paidInvoices;
   } catch (error) {
     console.error("Failed to fetch Xendit transactions:", error);
     throw error;
