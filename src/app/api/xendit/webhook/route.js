@@ -5,47 +5,68 @@ export async function POST(request) {
   // Verify webhook signature
   if (signature !== process.env.XENDIT_WEBHOOK_TOKEN) {
     console.log("Webhook signature verification failed");
+    console.log("Expected:", process.env.XENDIT_WEBHOOK_TOKEN);
+    console.log("Received:", signature);
     return new Response("Unauthorized", { status: 401 });
   }
 
   try {
     const payload = await request.json();
-    console.log("Received Xendit webhook:", payload);
+    console.log("✅ Received Xendit webhook:", JSON.stringify(payload, null, 2));
 
-    // Only process paid invoices
-    if (payload.status === "PAID") {
-      // Mock processing - in production this would:
-      // 1. Authenticate with Kledo
-      // 2. Create invoice in Kledo
-      // 3. Log the transfer
+    // Log transaction details
+    console.log("📄 Transaction Details:");
+    console.log("- ID:", payload.id);
+    console.log("- External ID:", payload.external_id);
+    console.log("- Status:", payload.status);
+    console.log("- Amount:", payload.amount, payload.currency);
+    console.log("- Payer Email:", payload.payer_email);
+    console.log("- Payment Method:", payload.payment_method);
+    console.log("- Created:", payload.created);
+    console.log("- Updated:", payload.updated);
+
+    // Check if this is a successful payment
+    if (payload.status === "PAID" || payload.status === "SETTLED") {
+      console.log("🎉 SUCCESSFUL PAYMENT RECEIVED!");
+      console.log(`Payment of ${payload.amount} ${payload.currency} has been completed`);
       
-      console.log(`Processing paid invoice ${payload.external_id}`);
-      console.log(`Amount: ${payload.amount}`);
-      console.log(`Payer: ${payload.payer_email}`);
-      
-      // Mock Kledo invoice creation
-      const mockKledoInvoice = {
-        id: "kledo_" + Date.now(),
-        invoice_number: payload.external_id,
-        amount: payload.amount,
-        status: "paid"
-      };
-      
-      console.log(`Successfully created Kledo invoice:`, mockKledoInvoice);
+      // Here you could:
+      // 1. Store in database
+      // 2. Send notifications
+      // 3. Update application state
+      // 4. Trigger other business logic
       
       return new Response(JSON.stringify({
         success: true,
-        kledo_invoice: mockKledoInvoice
+        message: "Payment processed successfully",
+        transaction_id: payload.id,
+        amount: payload.amount,
+        status: payload.status
+      }), { 
+        status: 200,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    } else {
+      console.log("ℹ️ Transaction status:", payload.status);
+      return new Response(JSON.stringify({
+        success: true,
+        message: `Transaction status: ${payload.status}`,
+        transaction_id: payload.id
       }), { 
         status: 200,
         headers: { 'Content-Type': 'application/json' }
       });
     }
 
-    return new Response("Ignored - not a paid invoice", { status: 200 });
   } catch (error) {
-    console.error("Webhook processing failed:", error);
-    return new Response("Processing failed", { status: 500 });
+    console.error("❌ Webhook processing failed:", error);
+    return new Response(JSON.stringify({
+      success: false,
+      error: error.message
+    }), { 
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    });
   }
 }
 
