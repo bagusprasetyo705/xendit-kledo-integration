@@ -46,10 +46,9 @@ export async function GET(request) {
       state: state,
     });
 
-    // Fix the OAuth endpoint based on analysis
-    // The PHP demo uses API_HOST=http://app.kledo.com/api/v1, but OAuth endpoints are typically at root level
-    // Try the correct OAuth endpoint pattern
-    const baseHost = 'http://app.kledo.com'; // Base host without /api/v1
+    // Fix the OAuth endpoint based on testing
+    // The correct domain is bagus2.api.kledo.com, not app.kledo.com
+    const baseHost = 'https://bagus2.api.kledo.com'; // Correct domain
     const authorizationUrl = `${baseHost}/oauth/authorize?${authParams.toString()}`;
 
     console.log('OAuth Authorization Request:', {
