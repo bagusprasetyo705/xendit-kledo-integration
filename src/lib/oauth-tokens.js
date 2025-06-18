@@ -59,7 +59,7 @@ export async function refreshAccessToken() {
       scope: '',
     });
 
-    const apiHost = process.env.KLEDO_API_HOST || 'https://bagus2.api.kledo.com';
+    const apiHost = process.env.KLEDO_API_HOST || 'http://app.kledo.com/api/v1';
     const tokenUrl = `${apiHost}/oauth/token`;
 
     const response = await fetch(tokenUrl, {

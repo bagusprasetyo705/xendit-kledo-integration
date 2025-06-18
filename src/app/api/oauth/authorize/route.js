@@ -46,8 +46,8 @@ export async function GET(request) {
       state: state,
     });
 
-    // Use the API host from environment or default like PHP demo
-    const apiHost = process.env.KLEDO_API_HOST || 'https://bagus2.api.kledo.com';
+    // Use the API host from environment exactly like PHP demo
+    const apiHost = process.env.KLEDO_API_HOST || 'http://app.kledo.com/api/v1';
     const authorizationUrl = `${apiHost}/oauth/authorize?${authParams.toString()}`;
 
     console.log('OAuth Authorization Request:', {
