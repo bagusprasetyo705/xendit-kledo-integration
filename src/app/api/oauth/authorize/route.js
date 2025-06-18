@@ -46,9 +46,11 @@ export async function GET(request) {
       state: state,
     });
 
-    // Use the API host from environment exactly like PHP demo
-    const apiHost = process.env.KLEDO_API_HOST || 'http://app.kledo.com/api/v1';
-    const authorizationUrl = `${apiHost}/oauth/authorize?${authParams.toString()}`;
+    // Fix the OAuth endpoint based on analysis
+    // The PHP demo uses API_HOST=http://app.kledo.com/api/v1, but OAuth endpoints are typically at root level
+    // Try the correct OAuth endpoint pattern
+    const baseHost = 'http://app.kledo.com'; // Base host without /api/v1
+    const authorizationUrl = `${baseHost}/oauth/authorize?${authParams.toString()}`;
 
     console.log('OAuth Authorization Request:', {
       clientId: clientId.substring(0, 8) + '...',
