@@ -63,8 +63,8 @@ export async function GET(request) {
       code: code,
     });
 
-    const apiHost = process.env.KLEDO_API_HOST || 'https://bagus2.api.kledo.com';
-    const tokenUrl = `${apiHost}/oauth/token`;
+    const oauthHost = process.env.KLEDO_OAUTH_HOST || process.env.KLEDO_API_HOST || 'https://app.kledo.com';
+    const tokenUrl = `${oauthHost}/oauth/token`;
 
     console.log('Token exchange request to:', tokenUrl);
 

@@ -46,10 +46,10 @@ export async function GET(request) {
       state: state,
     });
 
-    // Fix the OAuth endpoint based on testing
-    // The correct domain is bagus2.api.kledo.com, not app.kledo.com
-    const baseHost = 'https://bagus2.api.kledo.com'; // Correct domain
-    const authorizationUrl = `${baseHost}/oauth/authorize?${authParams.toString()}`;
+    // Use separate OAuth domain configuration for flexibility
+    // OAuth endpoints might be on different domain than API endpoints
+    const oauthHost = process.env.KLEDO_OAUTH_HOST || process.env.KLEDO_API_HOST || 'https://app.kledo.com';
+    const authorizationUrl = `${oauthHost}/oauth/authorize?${authParams.toString()}`;
 
     console.log('OAuth Authorization Request:', {
       clientId: clientId.substring(0, 8) + '...',
