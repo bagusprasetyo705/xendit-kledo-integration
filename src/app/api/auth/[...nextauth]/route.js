@@ -38,9 +38,27 @@ export async function GET(request) {
   if (pathname.includes('callback')) {
     const code = searchParams.get('code');
     const state = searchParams.get('state');
+    const error = searchParams.get('error');
+    const errorDescription = searchParams.get('error_description');
+    
+    console.log('OAuth Callback Debug Info:', {
+      pathname,
+      code: code ? 'Present' : 'Missing',
+      state: state ? 'Present' : 'Missing',
+      error,
+      errorDescription,
+      fullURL: request.url
+    });
+    
+    // Check for OAuth errors from Kledo
+    if (error) {
+      console.error('OAuth Error from Kledo:', error, errorDescription);
+      return Response.redirect(`${process.env.NEXTAUTH_URL}/auth/error?error=${error}&description=${encodeURIComponent(errorDescription || '')}`);
+    }
     
     if (!code) {
-      return Response.redirect(`${process.env.NEXTAUTH_URL}/auth/error?error=no_code`);
+      console.error('No authorization code received from Kledo');
+      return Response.redirect(`${process.env.NEXTAUTH_URL}/auth/error?error=no_code&description=${encodeURIComponent('No authorization code received from Kledo')}`);
     }
     
     try {

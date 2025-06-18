@@ -38,8 +38,38 @@ export default function Home() {
 
   const connectToKledo = () => {
     setAuthStatus('connecting');
-    // Redirect to Kledo OAuth
-    window.location.href = '/api/auth/signin';
+    // Redirect to new OAuth authorize endpoint
+    window.location.href = '/api/oauth/authorize';
+  };
+
+  const disconnectFromKledo = async () => {
+    try {
+      const response = await fetch('/api/oauth/status', {
+        method: 'DELETE'
+      });
+      
+      if (response.ok) {
+        setAuthStatus('disconnected');
+        alert('Disconnected from Kledo successfully!');
+      } else {
+        throw new Error('Failed to disconnect');
+      }
+    } catch (error) {
+      console.error('Failed to disconnect from Kledo:', error);
+      alert('Failed to disconnect from Kledo');
+    }
+  };
+
+  const checkAuthStatus = async () => {
+    try {
+      const response = await fetch('/api/oauth/status');
+      const status = await response.json();
+      
+      setAuthStatus(status.connected ? 'connected' : 'disconnected');
+    } catch (error) {
+      console.error('Failed to check auth status:', error);
+      setAuthStatus('disconnected');
+    }
   };
 
   const triggerManualSync = async () => {
@@ -68,13 +98,16 @@ export default function Home() {
     }
   };
 
-  // Check URL for auth success
+  // Check URL for auth success and check overall auth status
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get('auth') === 'success') {
       setAuthStatus('connected');
       // Clean up URL
       window.history.replaceState({}, document.title, window.location.pathname);
+    } else {
+      // Check current auth status
+      checkAuthStatus();
     }
   }, []);
 
@@ -98,7 +131,7 @@ export default function Home() {
                   <p className="text-gray-600">OAuth authenticated</p>
                 </div>
                 <button
-                  onClick={() => setAuthStatus('disconnected')}
+                  onClick={disconnectFromKledo}
                   className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
                 >
                   Disconnect

@@ -1,5 +1,6 @@
 // lib/kledo-service.js
 import { Xendit } from "xendit-node";
+import { getStoredTokens, refreshAccessToken } from './oauth-tokens.js';
 
 // Initialize Xendit client
 const xenditClient = new Xendit({
@@ -7,10 +8,31 @@ const xenditClient = new Xendit({
 });
 
 export async function getKledoAccessToken() {
-  // For now, return null - in production you'd implement proper token storage
-  // This could be enhanced to use cookies, database, or other secure storage
-  console.warn("Kledo access token not implemented in simplified version");
-  return null;
+  try {
+    const tokens = getStoredTokens();
+    
+    if (!tokens.is_connected) {
+      console.log('No Kledo connection found');
+      return null;
+    }
+    
+    if (tokens.access_token) {
+      console.log('Using stored access token');
+      return tokens.access_token;
+    }
+    
+    // Try to refresh if we have a refresh token
+    if (tokens.refresh_token) {
+      console.log('Attempting to refresh access token');
+      const refreshedTokens = await refreshAccessToken();
+      return refreshedTokens?.access_token || null;
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('Error getting Kledo access token:', error);
+    return null;
+  }
 }
 
 // Function to refresh access token if needed
