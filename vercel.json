@@ -1,9 +1,3 @@
 {
-  "version": 2,
-  "framework": "nextjs",
-  "functions": {
-    "src/app/api/**/*.js": {
-      "runtime": "nodejs18.x"
-    }
-  }
+  "version": 2
 }
