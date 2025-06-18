@@ -86,6 +86,8 @@ export async function getKledoProfile(accessToken) {
 
 export async function transferXenditToKledo(xenditInvoice) {
   try {
+    console.log(`🔄 Starting transfer for Xendit invoice: ${xenditInvoice.id}`);
+    
     const accessToken = await getKledoAccessToken();
     
     if (!accessToken) {
@@ -94,6 +96,7 @@ export async function transferXenditToKledo(xenditInvoice) {
 
     // First, let's check if we need to create a customer/contact
     const customerData = await createOrGetKledoCustomer(xenditInvoice.payer_email, accessToken);
+    console.log(`👤 Customer data:`, customerData);
     
     // Map Xendit invoice data to Kledo format
     const kledoInvoiceData = {
@@ -111,34 +114,65 @@ export async function transferXenditToKledo(xenditInvoice) {
       tags: ["xendit", "auto-import"],
     };
 
-    // Create invoice in Kledo
-    const response = await fetch(`${process.env.KLEDO_API_BASE_URL}/invoices`, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-      },
-      body: JSON.stringify(kledoInvoiceData),
-    });
+    console.log(`📋 Invoice data to send:`, kledoInvoiceData);
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("Kledo API Error:", errorText);
-      throw new Error(`Kledo API error: ${response.status} ${response.statusText} - ${errorText}`);
+    // Test different possible invoice endpoints
+    const possibleInvoiceEndpoints = [
+      '/invoices',
+      '/sales-invoices', 
+      '/api/invoices',
+      '/api/sales-invoices'
+    ];
+
+    let createResult = null;
+    let workingInvoiceEndpoint = null;
+
+    for (const endpoint of possibleInvoiceEndpoints) {
+      try {
+        const createUrl = `${process.env.KLEDO_API_BASE_URL}${endpoint}`;
+        console.log(`🔍 Trying invoice endpoint: ${createUrl}`);
+        
+        const response = await fetch(createUrl, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+          },
+          body: JSON.stringify(kledoInvoiceData),
+        });
+
+        console.log(`📊 ${endpoint}: ${response.status} ${response.statusText}`);
+
+        if (response.ok) {
+          const result = await response.json();
+          console.log(`✅ Invoice created successfully with endpoint: ${endpoint}`, result);
+          createResult = result;
+          workingInvoiceEndpoint = endpoint;
+          break;
+        } else {
+          const errorText = await response.text();
+          console.log(`❌ ${endpoint} failed: ${response.status} ${errorText}`);
+        }
+      } catch (error) {
+        console.log(`❌ ${endpoint} error: ${error.message}`);
+      }
     }
 
-    const result = await response.json();
-    
+    if (!createResult) {
+      throw new Error("All invoice creation endpoints failed. Please check Kledo API documentation.");
+    }
+
     // If invoice created successfully, mark it as paid
-    if (result.data && result.data.id) {
-      await markKledoInvoiceAsPaid(result.data.id, xenditInvoice.amount, accessToken);
+    if (createResult.data && createResult.data.id) {
+      console.log(`💰 Marking invoice ${createResult.data.id} as paid...`);
+      await markKledoInvoiceAsPaid(createResult.data.id, xenditInvoice.amount, accessToken);
     }
     
     // Log successful transfer
-    console.log(`✅ Successfully transferred Xendit invoice ${xenditInvoice.external_id} to Kledo invoice ${result.data?.id}`);
+    console.log(`✅ Successfully transferred Xendit invoice ${xenditInvoice.external_id} to Kledo invoice ${createResult.data?.id}`);
     
-    return result;
+    return createResult;
   } catch (error) {
     console.error("❌ Transfer failed:", error);
     throw error;
@@ -147,47 +181,89 @@ export async function transferXenditToKledo(xenditInvoice) {
 
 // Helper function to create or get customer in Kledo
 async function createOrGetKledoCustomer(email, accessToken) {
+  console.log(`🔍 Creating/finding customer for email: ${email}`);
+  
   if (!email) {
     // Return default customer or create anonymous customer
     return { id: null, name: "Anonymous Customer" };
   }
 
   try {
-    // First, try to find existing customer
-    const searchResponse = await fetch(`${process.env.KLEDO_API_BASE_URL}/contacts?search=${encodeURIComponent(email)}`, {
-      headers: {
-        "Authorization": `Bearer ${accessToken}`,
-        "Accept": "application/json",
-      },
-    });
+    // Test different possible contact endpoints
+    const possibleEndpoints = [
+      '/contacts',
+      '/customers',
+      '/api/contacts',
+      '/api/customers'
+    ];
 
-    if (searchResponse.ok) {
-      const searchResult = await searchResponse.json();
-      if (searchResult.data && searchResult.data.length > 0) {
-        return searchResult.data[0]; // Return first matching customer
+    let searchResult = null;
+    let workingEndpoint = null;
+
+    // Try to find existing customer using different endpoints
+    for (const endpoint of possibleEndpoints) {
+      try {
+        const searchUrl = `${process.env.KLEDO_API_BASE_URL}${endpoint}?search=${encodeURIComponent(email)}`;
+        console.log(`🔍 Trying endpoint: ${searchUrl}`);
+        
+        const searchResponse = await fetch(searchUrl, {
+          headers: {
+            "Authorization": `Bearer ${accessToken}`,
+            "Accept": "application/json",
+          },
+        });
+
+        console.log(`📊 ${endpoint}: ${searchResponse.status} ${searchResponse.statusText}`);
+
+        if (searchResponse.ok) {
+          const result = await searchResponse.json();
+          console.log(`✅ Found working endpoint: ${endpoint}`, result);
+          
+          if (result.data && result.data.length > 0) {
+            console.log(`🎯 Customer found: ${result.data[0].name}`);
+            return result.data[0]; // Return first matching customer
+          }
+          
+          searchResult = result;
+          workingEndpoint = endpoint;
+          break; // Found working endpoint, use it for creation
+        } else {
+          const errorText = await searchResponse.text();
+          console.log(`❌ ${endpoint} failed: ${errorText}`);
+        }
+      } catch (error) {
+        console.log(`❌ ${endpoint} error: ${error.message}`);
       }
     }
 
-    // Customer not found, create new one
-    const customerData = {
-      name: email.split('@')[0], // Use email prefix as name
-      email: email,
-      type: "customer",
-    };
+    // If we found a working endpoint but no customer, create new one
+    if (workingEndpoint) {
+      console.log(`📝 Creating new customer using endpoint: ${workingEndpoint}`);
+      
+      const customerData = {
+        name: email.split('@')[0], // Use email prefix as name
+        email: email,
+        type: "customer",
+      };
 
-    const createResponse = await fetch(`${process.env.KLEDO_API_BASE_URL}/contacts`, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-      },
-      body: JSON.stringify(customerData),
-    });
+      const createResponse = await fetch(`${process.env.KLEDO_API_BASE_URL}${workingEndpoint}`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+        },
+        body: JSON.stringify(customerData),
+      });
 
-    if (createResponse.ok) {
-      const result = await createResponse.json();
-      return result.data;
+      if (createResponse.ok) {
+        const result = await createResponse.json();
+        console.log(`✅ Customer created successfully:`, result.data);
+        return result.data;
+      } else {
+        const errorText = await createResponse.text();
+        console.error(`❌ Customer creation failed: ${createResponse.status} ${errorText}`);
+      }
     }
 
     // If customer creation fails, return null (will create invoice without specific customer)
@@ -202,6 +278,8 @@ async function createOrGetKledoCustomer(email, accessToken) {
 
 // Helper function to mark Kledo invoice as paid
 async function markKledoInvoiceAsPaid(invoiceId, amount, accessToken) {
+  console.log(`💰 Attempting to mark invoice ${invoiceId} as paid with amount ${amount}`);
+  
   try {
     const paymentData = {
       invoice_id: invoiceId,
@@ -211,24 +289,47 @@ async function markKledoInvoiceAsPaid(invoiceId, amount, accessToken) {
       notes: "Payment received via Xendit",
     };
 
-    const response = await fetch(`${process.env.KLEDO_API_BASE_URL}/payments`, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-      },
-      body: JSON.stringify(paymentData),
-    });
+    // Test different possible payment endpoints
+    const possiblePaymentEndpoints = [
+      '/payments',
+      '/invoice-payments',
+      '/api/payments',
+      '/api/invoice-payments',
+      `/invoices/${invoiceId}/payments`,
+      `/api/invoices/${invoiceId}/payments`
+    ];
 
-    if (response.ok) {
-      const result = await response.json();
-      console.log(`✅ Marked Kledo invoice ${invoiceId} as paid`);
-      return result;
-    } else {
-      const errorText = await response.text();
-      console.warn(`⚠️ Failed to mark invoice as paid: ${errorText}`);
+    for (const endpoint of possiblePaymentEndpoints) {
+      try {
+        const paymentUrl = `${process.env.KLEDO_API_BASE_URL}${endpoint}`;
+        console.log(`🔍 Trying payment endpoint: ${paymentUrl}`);
+        
+        const response = await fetch(paymentUrl, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+          },
+          body: JSON.stringify(paymentData),
+        });
+
+        console.log(`📊 ${endpoint}: ${response.status} ${response.statusText}`);
+
+        if (response.ok) {
+          const result = await response.json();
+          console.log(`✅ Successfully marked invoice ${invoiceId} as paid using endpoint: ${endpoint}`, result);
+          return result;
+        } else {
+          const errorText = await response.text();
+          console.log(`❌ ${endpoint} failed: ${response.status} ${errorText}`);
+        }
+      } catch (error) {
+        console.log(`❌ ${endpoint} error: ${error.message}`);
+      }
     }
+
+    console.warn(`⚠️ All payment endpoints failed for invoice ${invoiceId}`);
   } catch (error) {
     console.warn("Failed to mark invoice as paid:", error);
   }
