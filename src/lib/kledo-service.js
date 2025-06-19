@@ -153,6 +153,18 @@ export async function transferXenditToKledo(xenditInvoice) {
       throw new Error(`Cannot create invoice: No valid contact_id available. Customer data: ${JSON.stringify(customerData)}`);
     }
     
+    // Additional validation: Ensure the contact is properly set up as a customer type
+    if (customerData.type_id !== 1 && customerData.contact_type !== "customer") {
+      console.warn('⚠️ Contact may not be properly configured as customer type, attempting to fix...');
+      // Try to update the contact to ensure it's properly set as a customer
+      try {
+        await updateContactToCustomerType(customerData.id, accessToken);
+        console.log('✅ Contact updated to customer type');
+      } catch (updateError) {
+        console.warn('⚠️ Could not update contact type, proceeding with existing data:', updateError.message);
+      }
+    }
+    
     // Get a valid finance account ID for the invoice items
     const financeAccountId = await getDefaultFinanceAccountId(accessToken);
     console.log(`💰 Using finance account ID: ${financeAccountId}`);
@@ -162,6 +174,7 @@ export async function transferXenditToKledo(xenditInvoice) {
       trans_date: new Date().toISOString().split('T')[0], // Required field: transaction date
       due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // Due date
       contact_id: customerData.id, // Customer ID from Kledo (guaranteed to be valid now)
+      contact_type: "customer", // Explicitly specify customer contact type for invoice
       status_id: 1, // Draft status (adjust as needed)
       include_tax: false, // Specify tax inclusion
       items: [
@@ -178,6 +191,7 @@ export async function transferXenditToKledo(xenditInvoice) {
     };
 
     console.log(`📋 Invoice data to send:`, kledoInvoiceData);
+    console.log(`🔍 Customer validation - ID: ${customerData.id}, Type: ${customerData.type_id}, Contact Type: ${customerData.contact_type}`);
 
     // Use correct invoice endpoint from API documentation
     const invoiceEndpoint = '/finance/invoices';
@@ -213,6 +227,30 @@ export async function transferXenditToKledo(xenditInvoice) {
         try {
           const errorJson = JSON.parse(errorText);
           errorDetails = errorJson.message || errorJson.error || errorText;
+          
+          // Specific handling for contact type errors
+          if (errorDetails.includes('Tipe kontak customer di perlukan') || 
+              errorDetails.includes('Customer contact type') ||
+              errorDetails.includes('contact type')) {
+            
+            console.error('❌ Contact type validation error in invoice creation');
+            console.error('📋 Customer data used:', customerData);
+            console.error('📋 Invoice data sent:', kledoInvoiceData);
+            
+            // Try to re-fetch and validate the contact
+            try {
+              const contactValidation = await validateContactForInvoice(customerData.id, accessToken);
+              console.log('🔍 Contact validation result:', contactValidation);
+              
+              if (!contactValidation.isValid) {
+                throw new Error(`Contact validation failed: ${contactValidation.reason}. Please ensure the contact is properly configured as a customer in Kledo.`);
+              }
+            } catch (validationError) {
+              console.error('❌ Contact validation error:', validationError.message);
+            }
+            
+            throw new Error(`Invoice creation failed due to contact type validation: ${errorDetails}. The contact may not be properly configured as a customer type in Kledo.`);
+          }
         } catch (e) {
           // Keep original error text if not JSON
         }
@@ -236,6 +274,104 @@ export async function transferXenditToKledo(xenditInvoice) {
     return createResult;
   } catch (error) {
     console.error("❌ Transfer failed:", error);
+    throw error;
+  }
+}
+
+// Helper function to validate that a contact is properly configured for invoice creation
+async function validateContactForInvoice(contactId, accessToken) {
+  try {
+    console.log(`🔍 Validating contact ${contactId} for invoice creation...`);
+    
+    const response = await fetch(`${process.env.KLEDO_API_BASE_URL}/finance/contacts/${contactId}`, {
+      headers: {
+        "Authorization": `Bearer ${accessToken}`,
+        "Accept": "application/json",
+      },
+    });
+
+    if (response.ok) {
+      const result = await response.json();
+      const contact = result.data;
+      
+      console.log('📋 Contact details:', contact);
+      
+      // Check if contact is properly configured as customer
+      const isValidCustomer = (
+        contact.type_id === 1 || 
+        contact.contact_type === "customer" ||
+        contact.contact_type === "Customer"
+      );
+      
+      if (!isValidCustomer) {
+        return {
+          isValid: false,
+          reason: `Contact type mismatch: type_id=${contact.type_id}, contact_type=${contact.contact_type}`,
+          contact: contact
+        };
+      }
+      
+      // Check if contact has required fields
+      if (!contact.name || !contact.id) {
+        return {
+          isValid: false,
+          reason: `Missing required contact fields: name=${contact.name}, id=${contact.id}`,
+          contact: contact
+        };
+      }
+      
+      return {
+        isValid: true,
+        contact: contact
+      };
+    } else {
+      const errorText = await response.text();
+      return {
+        isValid: false,
+        reason: `Failed to fetch contact: ${response.status} ${errorText}`,
+        contact: null
+      };
+    }
+  } catch (error) {
+    return {
+      isValid: false,
+      reason: `Validation error: ${error.message}`,
+      contact: null
+    };
+  }
+}
+
+// Helper function to update a contact to ensure it's properly set as customer type
+async function updateContactToCustomerType(contactId, accessToken) {
+  try {
+    console.log(`🔧 Updating contact ${contactId} to customer type...`);
+    
+    const updateData = {
+      contact_type: "customer",
+      type_id: 1
+    };
+
+    const response = await fetch(`${process.env.KLEDO_API_BASE_URL}/finance/contacts/${contactId}`, {
+      method: "PUT",
+      headers: {
+        "Authorization": `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+      },
+      body: JSON.stringify(updateData),
+    });
+
+    if (response.ok) {
+      const result = await response.json();
+      console.log(`✅ Contact updated successfully:`, result.data);
+      return result.data;
+    } else {
+      const errorText = await response.text();
+      console.warn(`⚠️ Contact update failed: ${response.status} ${errorText}`);
+      throw new Error(`Contact update failed: ${errorText}`);
+    }
+  } catch (error) {
+    console.warn('⚠️ Error updating contact:', error);
     throw error;
   }
 }
@@ -303,9 +439,10 @@ async function createOrGetKledoCustomer(email, accessToken) {
     const customerData = {
       name: uniqueName, // Use unique name to avoid duplicates
       email: email,
-      type_id: 1, // Customer type ID
+      type_id: 1, // Customer type ID (required)
       contact_type: "customer", // Required: customer contact type
       group_id: groupId, // Required group_id field
+      is_customer: true, // Additional field to explicitly mark as customer
     };
 
     console.log(`📝 Creating customer with data:`, customerData);
@@ -426,9 +563,10 @@ async function getOrCreateDefaultCustomer(accessToken) {
     const defaultCustomerData = {
       name: uniqueName, // Use unique name to avoid duplicates
       email: `default-${timestamp}@xendit-integration.com`, // Unique email too
-      type_id: 1, // Customer type ID
+      type_id: 1, // Customer type ID (required)
       contact_type: "customer", // Required: customer contact type
       group_id: groupId, // Required group_id field
+      is_customer: true, // Additional field to explicitly mark as customer
     };
 
     console.log(`📝 Creating default customer with data:`, defaultCustomerData);
