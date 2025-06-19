@@ -286,10 +286,14 @@ async function createOrGetKledoCustomer(email, accessToken) {
     // If no existing customer found, create new one
     console.log(`📝 Creating new customer using contacts endpoint`);
     
+    // Get required group_id for contact creation
+    const groupId = await getDefaultContactGroupId(accessToken);
+    
     const customerData = {
       name: email.split('@')[0] || 'Customer', // Use email prefix as name
       email: email,
       type_id: 1, // Customer type ID (1 is typically customer in Kledo)
+      group_id: groupId, // Required group_id field
     };
 
     const createResponse = await fetch(`${process.env.KLEDO_API_BASE_URL}${contactsEndpoint}`, {
@@ -345,10 +349,15 @@ async function getOrCreateDefaultCustomer(accessToken) {
 
     // If no customers exist, create a default one
     console.log('📝 Creating default customer...');
+    
+    // Get required group_id for contact creation
+    const groupId = await getDefaultContactGroupId(accessToken);
+    
     const defaultCustomerData = {
       name: 'Default Customer',
       email: 'default@xendit-integration.com',
       type_id: 1, // Customer type ID
+      group_id: groupId, // Required group_id field
     };
 
     const createResponse = await fetch(`${process.env.KLEDO_API_BASE_URL}/finance/contacts`, {
@@ -376,6 +385,54 @@ async function getOrCreateDefaultCustomer(accessToken) {
   } catch (error) {
     console.error('❌ Default customer creation failed:', error);
     throw new Error(`Cannot create invoice: No valid contact_id available. Error: ${error.message}`);
+  }
+}
+
+// Helper function to get a default contact group ID
+async function getDefaultContactGroupId(accessToken) {
+  try {
+    console.log('🔍 Fetching contact groups to get default group ID...');
+    
+    // Try to get contact groups
+    const response = await fetch(`${process.env.KLEDO_API_BASE_URL}/finance/contactGroups`, {
+      headers: {
+        "Authorization": `Bearer ${accessToken}`,
+        "Accept": "application/json",
+      },
+    });
+
+    if (response.ok) {
+      const result = await response.json();
+      console.log('📊 Contact groups response:', result);
+      
+      if (result.data && result.data.length > 0) {
+        // Try to find a customer group first
+        const customerGroup = result.data.find(group => 
+          group.name?.toLowerCase().includes('customer') ||
+          group.name?.toLowerCase().includes('pelanggan') ||
+          group.name?.toLowerCase().includes('default')
+        );
+        
+        if (customerGroup) {
+          console.log(`✅ Using customer group: ${customerGroup.name} (ID: ${customerGroup.id})`);
+          return customerGroup.id;
+        }
+        
+        // Fallback to first group
+        console.log(`⚠️ Using first available group: ${result.data[0].name} (ID: ${result.data[0].id})`);
+        return result.data[0].id;
+      }
+    } else {
+      console.warn('⚠️ Could not fetch contact groups:', response.status);
+    }
+    
+    // Fallback to a common default ID
+    console.warn('⚠️ Using fallback contact group ID: 1');
+    return 1;
+    
+  } catch (error) {
+    console.warn('⚠️ Error fetching contact groups, using fallback ID:', error);
+    return 1; // Fallback group ID
   }
 }
 
