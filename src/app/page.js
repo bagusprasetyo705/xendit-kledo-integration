@@ -2,6 +2,7 @@
 'use client';
 import { useState, useEffect } from "react";
 import XenditTransactionTable from "../components/XenditTransactionTable";
+import KledoAccountsViewer from "../components/KledoAccountsViewer";
 
 export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
@@ -9,6 +10,7 @@ export default function Home() {
   const [error, setError] = useState(null);
   const [syncStatus, setSyncStatus] = useState(null);
   const [authStatus, setAuthStatus] = useState('disconnected'); // disconnected, connecting, connected
+  const [activeTab, setActiveTab] = useState('transactions'); // transactions, accounts
 
   const fetchXenditTransactions = async () => {
     setIsLoading(true);
@@ -267,6 +269,18 @@ export default function Home() {
                 'Manual Sync to Kledo'
               )}
             </button>
+
+            <button 
+              onClick={() => setActiveTab('accounts')}
+              disabled={authStatus !== 'connected'}
+              className={`px-4 py-2 rounded text-white font-medium ${
+                authStatus !== 'connected'
+                  ? 'bg-gray-400 cursor-not-allowed' 
+                  : 'bg-purple-600 hover:bg-purple-700'
+              }`}
+            >
+              🏦 View Finance Accounts
+            </button>
           </div>
           
           {error && (
@@ -307,14 +321,50 @@ export default function Home() {
           )}
         </div>
 
-        {/* Transactions Table */}
-        <div className="bg-white p-4 rounded-lg shadow-md border border-gray-200">
-          <h2 className="font-semibold text-lg mb-4 text-gray-800">Recent Xendit Transactions</h2>
-          <XenditTransactionTable 
-            transactions={transactions} 
-            isLoading={isLoading}
-            onSyncTransaction={syncSingleTransaction}
-          />
+        {/* Tab Navigation */}
+        <div className="bg-white rounded-lg shadow-md border border-gray-200 mb-6">
+          <div className="flex border-b border-gray-200">
+            <button
+              onClick={() => setActiveTab('transactions')}
+              className={`px-6 py-3 font-medium ${
+                activeTab === 'transactions'
+                  ? 'border-b-2 border-blue-500 text-blue-600 bg-blue-50'
+                  : 'text-gray-600 hover:text-gray-800'
+              }`}
+            >
+              📊 Transactions
+            </button>
+            <button
+              onClick={() => setActiveTab('accounts')}
+              className={`px-6 py-3 font-medium ${
+                activeTab === 'accounts'
+                  ? 'border-b-2 border-blue-500 text-blue-600 bg-blue-50'
+                  : 'text-gray-600 hover:text-gray-800'
+              }`}
+            >
+              🏦 Finance Accounts
+            </button>
+          </div>
+
+          {/* Tab Content */}
+          <div className="p-0">
+            {activeTab === 'transactions' && (
+              <div className="p-4">
+                <h2 className="font-semibold text-lg mb-4 text-gray-800">Recent Xendit Transactions</h2>
+                <XenditTransactionTable 
+                  transactions={transactions} 
+                  isLoading={isLoading}
+                  onSyncTransaction={syncSingleTransaction}
+                />
+              </div>
+            )}
+            
+            {activeTab === 'accounts' && (
+              <div>
+                <KledoAccountsViewer />
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
