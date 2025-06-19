@@ -1,7 +1,5 @@
-// API endpoint to update the fixed finance account ID
+// API endpoint to update the fixed finance account ID using environment variables
 import { getKledoAccessToken } from '@/lib/kledo-service';
-import fs from 'fs';
-import path from 'path';
 
 export async function POST(request) {
   try {
@@ -44,25 +42,9 @@ export async function POST(request) {
     const accountData = await validateResponse.json();
     console.log(`✅ Account validated: ${accountData.data?.name}`);
 
-    // Update the code file
-    const kledoServicePath = path.join(process.cwd(), 'src', 'lib', 'kledo-service.js');
-    const kledoServiceContent = fs.readFileSync(kledoServicePath, 'utf8');
-    
-    // Replace the fixed account ID in the getDefaultFinanceAccountId function
-    const updatedContent = kledoServiceContent.replace(
-      /const fixedAccountId = "[^"]*";/,
-      `const fixedAccountId = "${accountId}";`
-    );
-    
-    if (updatedContent === kledoServiceContent) {
-      return Response.json(
-        { success: false, error: "Could not find the fixed account ID line to update" },
-        { status: 500 }
-      );
-    }
-    
-    // Write the updated content back to the file
-    fs.writeFileSync(kledoServicePath, updatedContent, 'utf8');
+    // Store the account ID in runtime environment (this will persist for the current session)
+    // Note: In production, you'd want to store this in a database or use a proper configuration management system
+    process.env.KLEDO_FINANCE_ACCOUNT_ID = accountId.toString();
     
     console.log(`✅ Successfully updated finance account ID to: ${accountId}`);
     
@@ -70,7 +52,8 @@ export async function POST(request) {
       success: true,
       message: `Finance account ID updated to ${accountId}`,
       accountName: accountData.data?.name,
-      previousId: kledoServiceContent.match(/const fixedAccountId = "([^"]*)";/)?.[1] || 'unknown'
+      previousId: process.env.KLEDO_FINANCE_ACCOUNT_ID || '1',
+      note: "Account ID updated for current session. For permanent changes, update your environment variables."
     });
 
   } catch (error) {

@@ -84,13 +84,16 @@ export async function getKledoProfile(accessToken) {
   }
 }
 
-// Helper function to get a default finance account ID with fixed account ID
+// Helper function to get a default finance account ID with configurable account ID
 async function getDefaultFinanceAccountId(accessToken) {
   try {
-    console.log('🔍 Using fixed finance account ID as specified...');
+    console.log('🔍 Getting configurable finance account ID...');
     
-    // Use the fixed account ID as specified by the user
-    const fixedAccountId = "1-10001";
+    // Use environment variable if set, otherwise fallback to account ID 1
+    const configuredAccountId = process.env.KLEDO_FINANCE_ACCOUNT_ID || '1';
+    const fixedAccountId = parseInt(configuredAccountId); // Ensure it's a number
+    
+    console.log(`💡 Using finance account ID from config: ${fixedAccountId}`);
     
     // Optional: Try to validate the account exists, but don't fail if validation fails
     try {
@@ -104,23 +107,23 @@ async function getDefaultFinanceAccountId(accessToken) {
 
       if (response.ok) {
         const result = await response.json();
-        console.log(`✅ Validated fixed account ID ${fixedAccountId}:`, result.data?.name || 'Account exists');
+        console.log(`✅ Validated account ID ${fixedAccountId}:`, result.data?.name || 'Account exists');
       } else {
         console.warn(`⚠️ Could not validate account ID ${fixedAccountId}, but proceeding anyway: ${response.status}`);
       }
     } catch (validationError) {
-      console.warn(`⚠️ Account validation failed, but proceeding with fixed ID: ${validationError.message}`);
+      console.warn(`⚠️ Account validation failed, but proceeding with configured ID: ${validationError.message}`);
     }
     
-    console.log(`✅ Using fixed finance account ID: ${fixedAccountId}`);
-    return fixedAccountId; // Return as string to match the specified format
+    console.log(`✅ Using numeric finance account ID: ${fixedAccountId}`);
+    return fixedAccountId; // Return as number, not string
     
   } catch (error) {
-    console.error('❌ Error with fixed finance account ID:', error);
+    console.error('❌ Error with configurable finance account ID:', error);
     
-    // Even if there's an error, return the fixed account ID since it was specifically requested
-    console.log(`✅ Fallback to fixed finance account ID: 1-10001`);
-    return "1-10001";
+    // Even if there's an error, return the fallback account ID
+    console.log(`✅ Fallback to default finance account ID: 1`);
+    return 1; // Return as number
   }
 }
 
@@ -174,7 +177,7 @@ export async function transferXenditToKledo(xenditInvoice) {
       attachment: ["string"], // Attachment array as per API docs (empty string if no attachments)
       items: [
         {
-          finance_account_id: 1, // REQUIRED: Valid finance account ID from Kledo
+          finance_account_id: financeAccountId, // REQUIRED: Valid finance account ID from Kledo
           tax_id: 0, // No tax applied
           desc: xenditInvoice.description || "Payment via Xendit",
           qty: 1, // Quantity

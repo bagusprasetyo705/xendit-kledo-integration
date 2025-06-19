@@ -38,7 +38,7 @@ export default function KledoAccountsViewer() {
   };
 
   const updateAccountId = async (accountId, accountName) => {
-    if (!confirm(`Are you sure you want to update the finance account ID to ${accountId} (${accountName})?\n\nThis will modify the code and affect all future invoice creations.`)) {
+    if (!confirm(`Are you sure you want to update the finance account ID to ${accountId} (${accountName})?\n\nThis will update the runtime configuration and affect all future invoice creations in this session.`)) {
       return;
     }
 
@@ -57,7 +57,7 @@ export default function KledoAccountsViewer() {
       
       if (data.success) {
         setUpdateStatus({ success: true, accountId, accountName: data.accountName, previousId: data.previousId });
-        alert(`✅ Success!\n\nFinance account ID updated from ${data.previousId} to ${accountId}\nAccount: ${data.accountName}\n\nThe change is now active for all new invoice creations.`);
+        alert(`✅ Success!\n\nFinance account ID updated to ${accountId}\nAccount: ${data.accountName}\n\nNote: ${data.note}\n\nThe change is now active for all new invoice creations in this session.`);
       } else {
         setUpdateStatus({ error: data.error, accountId });
         alert(`❌ Failed to update account ID: ${data.error}`);
