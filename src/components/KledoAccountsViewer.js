@@ -19,14 +19,18 @@ export default function KledoAccountsViewer() {
       const data = await response.json();
       
       if (data.success) {
-        setAccounts(data.accounts);
-        console.log('✅ Accounts loaded:', data.accounts);
+        // Ensure accounts is always an array
+        const accountsArray = Array.isArray(data.accounts) ? data.accounts : [];
+        setAccounts(accountsArray);
+        console.log('✅ Accounts loaded:', accountsArray);
       } else {
         setError(data.error);
+        setAccounts([]); // Reset to empty array on error
       }
     } catch (err) {
       setError('Failed to fetch accounts: ' + err.message);
       console.error('❌ Error:', err);
+      setAccounts([]); // Reset to empty array on error
     } finally {
       setLoading(false);
     }
@@ -64,12 +68,12 @@ export default function KledoAccountsViewer() {
   };
 
   // Filter accounts based on search term
-  const filteredAccounts = accounts.filter(account =>
+  const filteredAccounts = Array.isArray(accounts) ? accounts.filter(account =>
     account.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     account.code?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     account.id?.toString().includes(searchTerm) ||
     account.type?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  ) : [];
 
   return (
     <div className="max-w-6xl mx-auto p-6">
@@ -237,7 +241,7 @@ export default function KledoAccountsViewer() {
               💡 Recommended Accounts for Invoice Items
             </h3>
             <div className="space-y-2">
-              {accounts
+              {Array.isArray(accounts) ? accounts
                 .filter(account => 
                   account.type === 'Revenue' || 
                   account.name?.toLowerCase().includes('revenue') ||
@@ -263,9 +267,18 @@ export default function KledoAccountsViewer() {
                       >
                         Copy ID
                       </button>
+                      <button
+                        onClick={() => updateAccountId(account.id, account.name)}
+                        disabled={updateStatus?.loading}
+                        className="px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50"
+                      >
+                        Use This ID
+                      </button>
                     </div>
                   </div>
-                ))}
+                )) : (
+                  <p className="text-gray-500">No accounts available</p>
+                )}
             </div>
           </div>
         )}

@@ -40,7 +40,18 @@ export async function GET() {
     console.log('✅ Finance accounts fetched successfully:', accountsData);
 
     // Format the accounts data for easy display
-    const formattedAccounts = accountsData.data?.map(account => ({
+    // Handle both array and object responses
+    let accountsArray = [];
+    if (Array.isArray(accountsData.data)) {
+      accountsArray = accountsData.data;
+    } else if (Array.isArray(accountsData)) {
+      accountsArray = accountsData;
+    } else if (accountsData.data && typeof accountsData.data === 'object') {
+      // If data is an object with accounts inside
+      accountsArray = Object.values(accountsData.data);
+    }
+
+    const formattedAccounts = accountsArray.map(account => ({
       id: account.id,
       name: account.name,
       code: account.code,
@@ -50,7 +61,7 @@ export async function GET() {
       description: account.description || '',
       category: account.category || '',
       parent_id: account.parent_id || null,
-    })) || [];
+    }));
 
     return Response.json({
       success: true,
