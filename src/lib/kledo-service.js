@@ -286,28 +286,21 @@ async function createOrGetKledoCustomer(email, accessToken) {
     // If no existing customer found, create new one
     console.log(`📝 Creating new customer using contacts endpoint`);
     
-    // Get required group_id for contact creation with validation
+    // Get required group_id for contact creation - create one if none exists
     let groupId;
     try {
       groupId = await getDefaultContactGroupId(accessToken);
     } catch (error) {
-      console.warn('⚠️ Cannot get valid group ID, will try without group_id:', error);
-      groupId = null;
+      console.error('❌ Cannot get valid group ID for customer creation:', error);
+      throw new Error(`Customer creation failed: ${error.message}`);
     }
     
     const customerData = {
       name: email.split('@')[0] || 'Customer', // Use email prefix as name
       email: email,
       type_id: 1, // Customer type ID (1 is typically customer in Kledo)
+      group_id: groupId, // Required group_id field
     };
-
-    // Only add group_id if we have a valid one
-    if (groupId !== null) {
-      customerData.group_id = groupId;
-      console.log(`📝 Creating customer with group_id: ${groupId}`);
-    } else {
-      console.log(`📝 Creating customer without group_id (not available)`);
-    }
 
     console.log(`📝 Creating customer with data:`, customerData);
 
@@ -328,42 +321,6 @@ async function createOrGetKledoCustomer(email, accessToken) {
     } else {
       const errorText = await createResponse.text();
       console.error(`❌ Customer creation failed: ${createResponse.status} ${errorText}`);
-      
-      // Try to parse error details
-      try {
-        const errorData = JSON.parse(errorText);
-        if (errorData.message && errorData.message.includes('group')) {
-          console.error('❌ Group ID validation error:', errorData.message);
-          
-          // If group_id was the issue and we had one, try without it
-          if (groupId !== null) {
-            console.log('🔄 Retrying customer creation without group_id...');
-            const customerDataNoGroup = {
-              name: email.split('@')[0] || 'Customer',
-              email: email,
-              type_id: 1,
-            };
-            
-            const retryResponse = await fetch(`${process.env.KLEDO_API_BASE_URL}${contactsEndpoint}`, {
-              method: "POST",
-              headers: {
-                "Authorization": `Bearer ${accessToken}`,
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-              },
-              body: JSON.stringify(customerDataNoGroup),
-            });
-            
-            if (retryResponse.ok) {
-              const retryResult = await retryResponse.json();
-              console.log(`✅ Customer created successfully without group_id:`, retryResult.data);
-              return retryResult.data;
-            }
-          }
-        }
-      } catch (parseError) {
-        // Error text is not JSON, continue with fallback
-      }
       
       // If customer creation fails, use default customer
       console.warn(`Customer creation failed, using default customer`);
@@ -401,28 +358,21 @@ async function getOrCreateDefaultCustomer(accessToken) {
     // If no customers exist, create a default one
     console.log('📝 Creating default customer...');
     
-    // Get required group_id for contact creation with validation
+    // Get required group_id for contact creation - create one if none exists
     let groupId;
     try {
       groupId = await getDefaultContactGroupId(accessToken);
     } catch (error) {
-      console.warn('⚠️ Cannot get valid group ID for default customer, will try without group_id:', error);
-      groupId = null;
+      console.error('❌ Cannot get valid group ID for default customer creation:', error);
+      throw new Error(`Default customer creation failed: ${error.message}`);
     }
     
     const defaultCustomerData = {
       name: 'Default Customer',
       email: 'default@xendit-integration.com',
       type_id: 1, // Customer type ID
+      group_id: groupId, // Required group_id field
     };
-
-    // Only add group_id if we have a valid one
-    if (groupId !== null) {
-      defaultCustomerData.group_id = groupId;
-      console.log(`📝 Creating default customer with group_id: ${groupId}`);
-    } else {
-      console.log(`📝 Creating default customer without group_id (not available)`);
-    }
 
     console.log(`📝 Creating default customer with data:`, defaultCustomerData);
 
@@ -443,45 +393,6 @@ async function getOrCreateDefaultCustomer(accessToken) {
     } else {
       const errorText = await createResponse.text();
       console.error(`❌ Default customer creation failed: ${createResponse.status} ${errorText}`);
-      
-      // Try to parse error details
-      try {
-        const errorData = JSON.parse(errorText);
-        if (errorData.message && errorData.message.includes('group')) {
-          console.error('❌ Group ID validation error:', errorData.message);
-          
-          // If group_id was the issue and we had one, try without it
-          if (groupId !== null) {
-            console.log('🔄 Retrying default customer creation without group_id...');
-            const defaultCustomerNoGroup = {
-              name: 'Default Customer',
-              email: 'default@xendit-integration.com',
-              type_id: 1,
-            };
-            
-            const retryResponse = await fetch(`${process.env.KLEDO_API_BASE_URL}/finance/contacts`, {
-              method: "POST",
-              headers: {
-                "Authorization": `Bearer ${accessToken}`,
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-              },
-              body: JSON.stringify(defaultCustomerNoGroup),
-            });
-            
-            if (retryResponse.ok) {
-              const retryResult = await retryResponse.json();
-              console.log(`✅ Default customer created successfully without group_id:`, retryResult.data);
-              return retryResult.data;
-            } else {
-              const retryErrorText = await retryResponse.text();
-              console.error(`❌ Retry also failed: ${retryResponse.status} ${retryErrorText}`);
-            }
-          }
-        }
-      } catch (parseError) {
-        // Error text is not JSON, continue with original error
-      }
       
       // Last resort: throw error because we can't proceed without a contact_id
       throw new Error(`Cannot create invoice: No valid contact_id available. Contact creation failed: ${errorText}`);
@@ -555,14 +466,29 @@ async function getDefaultContactGroupId(accessToken) {
       return 1;
     }
     
-    // Return null instead of throwing error - let caller handle gracefully
-    console.warn('⚠️ No valid contact group ID found - will try creating contact without group_id');
-    return null;
+    // Last resort: create a default contact group
+    console.log('🔧 No valid contact groups found, creating default group...');
+    try {
+      const newGroupId = await createDefaultContactGroup(accessToken);
+      console.log(`✅ Created default contact group with ID: ${newGroupId}`);
+      return newGroupId;
+    } catch (createError) {
+      console.error('❌ Failed to create default contact group:', createError);
+      throw new Error(`No valid contact group ID found and cannot create one: ${createError.message}`);
+    }
     
   } catch (error) {
     console.error('❌ Error fetching contact groups:', error);
-    console.warn('⚠️ Will attempt contact creation without group_id');
-    return null; // Return null instead of throwing
+    // Try to create a default group as fallback
+    try {
+      console.log('🔧 Creating default contact group as error fallback...');
+      const newGroupId = await createDefaultContactGroup(accessToken);
+      console.log(`✅ Created fallback contact group with ID: ${newGroupId}`);
+      return newGroupId;
+    } catch (createError) {
+      console.error('❌ Failed to create fallback contact group:', createError);
+      throw new Error(`Cannot determine valid contact group ID and cannot create one: ${createError.message}`);
+    }
   }
 }
 
@@ -704,5 +630,61 @@ export async function getXenditTransactions(limit = 10) {
   } catch (error) {
     console.error("Failed to fetch Xendit transactions:", error);
     throw error;
+  }
+}
+
+// Helper function to create a default contact group when none exists
+async function createDefaultContactGroup(accessToken) {
+  try {
+    console.log('🔧 Creating default contact group...');
+    
+    const defaultGroupData = {
+      name: 'Default Customers',
+      code: 'DEFAULT_CUSTOMERS',
+    };
+
+    const response = await fetch(`${process.env.KLEDO_API_BASE_URL}/finance/contactGroups`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+      },
+      body: JSON.stringify(defaultGroupData),
+    });
+
+    if (response.ok) {
+      const result = await response.json();
+      console.log(`✅ Default contact group created:`, result.data);
+      return parseInt(result.data.id);
+    } else {
+      const errorText = await response.text();
+      console.error(`❌ Default contact group creation failed: ${response.status} ${errorText}`);
+      
+      // Try with minimal data
+      const minimalGroupData = { name: 'Customers' };
+      const retryResponse = await fetch(`${process.env.KLEDO_API_BASE_URL}/finance/contactGroups`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+        },
+        body: JSON.stringify(minimalGroupData),
+      });
+
+      if (retryResponse.ok) {
+        const retryResult = await retryResponse.json();
+        console.log(`✅ Minimal contact group created:`, retryResult.data);
+        return parseInt(retryResult.data.id);
+      } else {
+        const retryErrorText = await retryResponse.text();
+        console.error(`❌ Minimal contact group creation also failed: ${retryResponse.status} ${retryErrorText}`);
+        throw new Error(`Cannot create default contact group: ${retryErrorText}`);
+      }
+    }
+  } catch (error) {
+    console.error('❌ Error creating default contact group:', error);
+    throw new Error(`Cannot create default contact group: ${error.message}`);
   }
 }
