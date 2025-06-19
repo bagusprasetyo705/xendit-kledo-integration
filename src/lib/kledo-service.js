@@ -295,10 +295,16 @@ async function createOrGetKledoCustomer(email, accessToken) {
       throw new Error(`Customer creation failed: ${error.message}`);
     }
     
+    // Generate unique name to avoid "Name sudah digunakan" error
+    const baseName = email.split('@')[0] || 'Customer';
+    const timestamp = Date.now();
+    const uniqueName = `${baseName}-${timestamp}`;
+    
     const customerData = {
-      name: email.split('@')[0] || 'Customer', // Use email prefix as name
+      name: uniqueName, // Use unique name to avoid duplicates
       email: email,
-      type_id: 1, // Customer type ID (1 is typically customer in Kledo)
+      type_id: 1, // Customer type ID
+      contact_type: "customer", // Required: customer contact type
       group_id: groupId, // Required group_id field
     };
 
@@ -321,6 +327,52 @@ async function createOrGetKledoCustomer(email, accessToken) {
     } else {
       const errorText = await createResponse.text();
       console.error(`❌ Customer creation failed: ${createResponse.status} ${errorText}`);
+      
+      // Try to parse error details
+      try {
+        const errorData = JSON.parse(errorText);
+        if (errorData.message) {
+          if (errorData.message.includes('Name sudah digunakan') || errorData.message.includes('already used')) {
+            console.warn('❌ Name already used, trying with more unique name...');
+            // Try again with even more unique name
+            const retryTimestamp = Date.now() + Math.random() * 1000;
+            const retryName = `${baseName}-${Math.floor(retryTimestamp)}`;
+            const retryCustomerData = {
+              ...customerData,
+              name: retryName,
+              email: `${retryName.toLowerCase()}@xendit-integration.com`
+            };
+            
+            const retryResponse = await fetch(`${process.env.KLEDO_API_BASE_URL}${contactsEndpoint}`, {
+              method: "POST",
+              headers: {
+                "Authorization": `Bearer ${accessToken}`,
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+              },
+              body: JSON.stringify(retryCustomerData),
+            });
+            
+            if (retryResponse.ok) {
+              const retryResult = await retryResponse.json();
+              console.log(`✅ Customer created on retry:`, retryResult.data);
+              return retryResult.data;
+            }
+          }
+          
+          if (errorData.message.includes('group')) {
+            console.error('❌ Group ID validation error:', errorData.message);
+            throw new Error(`Invalid group ID: ${errorData.message}`);
+          }
+          
+          if (errorData.message.includes('contact_type') || errorData.message.includes('Tipe kontak')) {
+            console.error('❌ Contact type error:', errorData.message);
+            throw new Error(`Contact type required: ${errorData.message}`);
+          }
+        }
+      } catch (parseError) {
+        // Error text is not JSON, continue with fallback
+      }
       
       // If customer creation fails, use default customer
       console.warn(`Customer creation failed, using default customer`);
@@ -367,10 +419,15 @@ async function getOrCreateDefaultCustomer(accessToken) {
       throw new Error(`Default customer creation failed: ${error.message}`);
     }
     
+    // Generate unique name to avoid duplicates
+    const timestamp = Date.now();
+    const uniqueName = `Default-Customer-${timestamp}`;
+    
     const defaultCustomerData = {
-      name: 'Default Customer',
-      email: 'default@xendit-integration.com',
+      name: uniqueName, // Use unique name to avoid duplicates
+      email: `default-${timestamp}@xendit-integration.com`, // Unique email too
       type_id: 1, // Customer type ID
+      contact_type: "customer", // Required: customer contact type
       group_id: groupId, // Required group_id field
     };
 
@@ -393,6 +450,52 @@ async function getOrCreateDefaultCustomer(accessToken) {
     } else {
       const errorText = await createResponse.text();
       console.error(`❌ Default customer creation failed: ${createResponse.status} ${errorText}`);
+      
+      // Try to parse error details
+      try {
+        const errorData = JSON.parse(errorText);
+        if (errorData.message) {
+          if (errorData.message.includes('Name sudah digunakan') || errorData.message.includes('already used')) {
+            console.warn('❌ Default customer name already used, trying with more unique name...');
+            // Try again with even more unique name
+            const retryTimestamp = Date.now() + Math.random() * 1000;
+            const retryName = `Default-Customer-${Math.floor(retryTimestamp)}`;
+            const retryCustomerData = {
+              ...defaultCustomerData,
+              name: retryName,
+              email: `default-${Math.floor(retryTimestamp)}@xendit-integration.com`
+            };
+            
+            const retryResponse = await fetch(`${process.env.KLEDO_API_BASE_URL}/finance/contacts`, {
+              method: "POST",
+              headers: {
+                "Authorization": `Bearer ${accessToken}`,
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+              },
+              body: JSON.stringify(retryCustomerData),
+            });
+            
+            if (retryResponse.ok) {
+              const retryResult = await retryResponse.json();
+              console.log(`✅ Default customer created on retry:`, retryResult.data);
+              return retryResult.data;
+            }
+          }
+          
+          if (errorData.message.includes('group')) {
+            console.error('❌ Group ID validation error:', errorData.message);
+            throw new Error(`Invalid group ID for default customer: ${errorData.message}`);
+          }
+          
+          if (errorData.message.includes('contact_type') || errorData.message.includes('Tipe kontak')) {
+            console.error('❌ Contact type error for default customer:', errorData.message);
+            throw new Error(`Contact type required for default customer: ${errorData.message}`);
+          }
+        }
+      } catch (parseError) {
+        // Error text is not JSON, continue with original error
+      }
       
       // Last resort: throw error because we can't proceed without a contact_id
       throw new Error(`Cannot create invoice: No valid contact_id available. Contact creation failed: ${errorText}`);
