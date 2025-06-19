@@ -169,19 +169,19 @@ export async function transferXenditToKledo(xenditInvoice) {
     const financeAccountId = await getDefaultFinanceAccountId(accessToken);
     console.log(`💰 Using finance account ID: ${financeAccountId}`);
     
-    // Map Xendit invoice data to Kledo format (aligned with official API documentation)
+    // Map Xendit invoice data to Kledo format (exactly aligned with official API documentation)
     const kledoInvoiceData = {
       trans_date: new Date().toISOString().split('T')[0], // Required field: transaction date
       due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // Due date
       contact_id: customerData.id, // Customer ID from Kledo (guaranteed to be valid now)
       contact_shipping_address_id: 0, // Default shipping address
       sales_id: 0, // No sales person assigned
-      status_id: 1, // Draft status (1 = draft, per API docs)
+      status_id: 0, // Draft status (0 = draft, per API docs example)
       include_tax: 0, // Tax inclusion (0 = exclude, 1 = include)
       term_id: 0, // No payment terms
-      ref_number: xenditInvoice.external_id, // Reference number
+      ref_number: xenditInvoice.external_id || "string", // Reference number
       memo: `Automatically created from Xendit payment.\nOriginal ID: ${xenditInvoice.id}\nExternal ID: ${xenditInvoice.external_id}`,
-      attachment: [], // No attachments
+      attachment: ["string"], // Attachment array as per API docs (empty string if no attachments)
       items: [
         {
           finance_account_id: financeAccountId, // REQUIRED: Valid finance account ID from Kledo
@@ -196,25 +196,36 @@ export async function transferXenditToKledo(xenditInvoice) {
           discount_percent: 0, // No discount
           unit_id: 0, // No specific unit
           column_name: "One", // Default column name as per API docs
-          serial_numbers: [] // No serial numbers
+          serial_numbers: [
+            {
+              product_serial_number_id: 0, // Product serial number ID (0 = none)
+              qty: 0 // Quantity for serial number (0 = none)
+            }
+          ]
         }
       ],
-      witholdings: [], // No withholdings
+      witholdings: [
+        {
+          witholding_account_id: 0, // Withholding account ID (0 = none)
+          witholding_amount: 0, // Withholding amount (0 = none)
+          witholding_percent: 0 // Withholding percentage (0 = none)
+        }
+      ],
       warehouse_id: 0, // No warehouse
       additional_discount_percent: 0, // No additional discount
       additional_discount_amount: 0, // No additional discount amount
-      message: "", // No message
-      tags: [], // No tags
+      message: "string", // Message field as per API docs
+      tags: [0], // Tags array with default value 0
       shipping_cost: 0, // No shipping cost
       shipping_date: new Date().toISOString().split('T')[0], // Current date for shipping
       shipping_comp_id: 0, // No shipping company
-      shipping_tracking: "", // No tracking number
-      delivery_ids: [], // No deliveries
+      shipping_tracking: "string", // Shipping tracking as per API docs
+      delivery_ids: [0], // Delivery IDs array with default value 0
       down_payment: 0, // No down payment
       witholding_percent: 0, // No withholding percentage
       witholding_amount: 0, // No withholding amount
       witholding_account_id: 0, // No withholding account
-      column_name: "One" // Default column name
+      column_name: "string" // Column name field as per API docs
     };
 
     console.log(`📋 Invoice data to send:`, kledoInvoiceData);
