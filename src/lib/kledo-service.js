@@ -84,53 +84,77 @@ export async function getKledoProfile(accessToken) {
   }
 }
 
-// Helper function to get a default finance account ID
+// Helper function to get a default finance account ID with proper validation
 async function getDefaultFinanceAccountId(accessToken) {
   try {
-    console.log('🔍 Fetching finance accounts to get default account ID...');
+    console.log('🔍 Fetching finance accounts to get valid account ID...');
     
-    // Try to get finance accounts
+    // Try to get finance accounts with X-APP header
     const response = await fetch(`${process.env.KLEDO_API_BASE_URL}/finance/accounts`, {
       headers: {
         "Authorization": `Bearer ${accessToken}`,
         "Accept": "application/json",
+        "X-APP": "finance", // Add required header
       },
     });
 
     if (response.ok) {
       const result = await response.json();
       console.log('📊 Finance accounts response:', result);
+      console.log('📊 Available accounts:', result.data?.map(acc => ({ 
+        id: acc.id, 
+        name: acc.name, 
+        code: acc.code,
+        account_type_id: acc.account_type_id,
+        active: acc.active 
+      })));
       
       // Look for a revenue/income account (typically has account type for sales)
       if (result.data && result.data.length > 0) {
-        // Try to find a revenue/sales account first
-        const revenueAccount = result.data.find(account => 
-          account.account_type_id === 4 || // Common revenue account type ID
+        // Filter to only active accounts
+        const activeAccounts = result.data.filter(account => 
+          account.active !== false && account.id != null
+        );
+        
+        if (activeAccounts.length === 0) {
+          throw new Error('No active finance accounts found in Kledo');
+        }
+        
+        // Try to find revenue/sales accounts first (common account type IDs: 4, 5, or sales-related names)
+        const revenueAccount = activeAccounts.find(account => 
+          account.account_type_id === 4 ||  // Revenue account type
+          account.account_type_id === 5 ||  // Income account type
+          account.code?.toLowerCase().includes('4') ||  // Chart of accounts code starting with 4 (revenue)
           account.name?.toLowerCase().includes('revenue') ||
           account.name?.toLowerCase().includes('sales') ||
-          account.name?.toLowerCase().includes('income')
+          account.name?.toLowerCase().includes('income') ||
+          account.name?.toLowerCase().includes('pendapatan') ||
+          account.name?.toLowerCase().includes('penjualan')
         );
         
         if (revenueAccount) {
-          console.log(`✅ Using revenue account: ${revenueAccount.name} (ID: ${revenueAccount.id})`);
-          return revenueAccount.id;
+          console.log(`✅ Using revenue account: ${revenueAccount.name} (ID: ${revenueAccount.id}, Code: ${revenueAccount.code})`);
+          return parseInt(revenueAccount.id); // Ensure integer type
         }
         
-        // Fallback to first account
-        console.log(`⚠️ Using first available account: ${result.data[0].name} (ID: ${result.data[0].id})`);
-        return result.data[0].id;
+        // Fallback to first active account
+        const firstAccount = activeAccounts[0];
+        console.log(`⚠️ Using first available active account: ${firstAccount.name} (ID: ${firstAccount.id}, Code: ${firstAccount.code})`);
+        return parseInt(firstAccount.id); // Ensure integer type
+      } else {
+        throw new Error('No finance accounts found in response');
       }
     } else {
-      console.warn('⚠️ Could not fetch finance accounts:', response.status);
+      const errorText = await response.text();
+      console.error(`❌ Could not fetch finance accounts: ${response.status} - ${errorText}`);
+      throw new Error(`Failed to fetch finance accounts: ${response.status} ${errorText}`);
     }
     
-    // Fallback to a common default ID (you may need to adjust this)
-    console.warn('⚠️ Using fallback finance account ID: 1');
-    return 1;
-    
   } catch (error) {
-    console.warn('⚠️ Error fetching finance accounts, using fallback ID:', error);
-    return 1; // Fallback account ID
+    console.error('❌ Error fetching finance accounts:', error);
+    
+    // Instead of using a fallback ID, throw an error to force proper handling
+    throw new Error(`Cannot determine valid finance account ID: ${error.message}. Please ensure finance accounts are properly configured in Kledo.`);
   }
 }
 
