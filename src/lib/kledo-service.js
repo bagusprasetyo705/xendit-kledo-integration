@@ -174,7 +174,7 @@ export async function transferXenditToKledo(xenditInvoice) {
       attachment: ["string"], // Attachment array as per API docs (empty string if no attachments)
       items: [
         {
-          finance_account_id: financeAccountId, // REQUIRED: Valid finance account ID from Kledo
+          finance_account_id: 10001, // REQUIRED: Valid finance account ID from Kledo
           tax_id: 0, // No tax applied
           desc: xenditInvoice.description || "Payment via Xendit",
           qty: 1, // Quantity
