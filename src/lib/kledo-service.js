@@ -169,25 +169,52 @@ export async function transferXenditToKledo(xenditInvoice) {
     const financeAccountId = await getDefaultFinanceAccountId(accessToken);
     console.log(`💰 Using finance account ID: ${financeAccountId}`);
     
-    // Map Xendit invoice data to Kledo format (using correct API structure)
+    // Map Xendit invoice data to Kledo format (aligned with official API documentation)
     const kledoInvoiceData = {
       trans_date: new Date().toISOString().split('T')[0], // Required field: transaction date
       due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // Due date
       contact_id: customerData.id, // Customer ID from Kledo (guaranteed to be valid now)
-      contact_type: "customer", // Explicitly specify customer contact type for invoice
-      status_id: 1, // Draft status (adjust as needed)
-      include_tax: false, // Specify tax inclusion
+      contact_shipping_address_id: 0, // Default shipping address
+      sales_id: 0, // No sales person assigned
+      status_id: 1, // Draft status (1 = draft, per API docs)
+      include_tax: 0, // Tax inclusion (0 = exclude, 1 = include)
+      term_id: 0, // No payment terms
+      ref_number: xenditInvoice.external_id, // Reference number
+      memo: `Automatically created from Xendit payment.\nOriginal ID: ${xenditInvoice.id}\nExternal ID: ${xenditInvoice.external_id}`,
+      attachment: [], // No attachments
       items: [
         {
           finance_account_id: financeAccountId, // REQUIRED: Valid finance account ID from Kledo
+          tax_id: 0, // No tax applied
           desc: xenditInvoice.description || "Payment via Xendit",
-          qty: 1,
-          price: xenditInvoice.amount,
+          qty: 1, // Quantity
+          price: xenditInvoice.amount, // Unit price
           amount: xenditInvoice.amount, // Total amount for this line item
+          price_after_tax: xenditInvoice.amount, // Price after tax (same as price when no tax)
+          amount_after_tax: xenditInvoice.amount, // Amount after tax (same as amount when no tax)
+          tax_manual: 0, // Manual tax calculation disabled
+          discount_percent: 0, // No discount
+          unit_id: 0, // No specific unit
+          column_name: "One", // Default column name as per API docs
+          serial_numbers: [] // No serial numbers
         }
       ],
-      memo: `Automatically created from Xendit payment.\nOriginal ID: ${xenditInvoice.id}\nExternal ID: ${xenditInvoice.external_id}`,
-      ref_number: xenditInvoice.external_id, // Reference number
+      witholdings: [], // No withholdings
+      warehouse_id: 0, // No warehouse
+      additional_discount_percent: 0, // No additional discount
+      additional_discount_amount: 0, // No additional discount amount
+      message: "", // No message
+      tags: [], // No tags
+      shipping_cost: 0, // No shipping cost
+      shipping_date: new Date().toISOString().split('T')[0], // Current date for shipping
+      shipping_comp_id: 0, // No shipping company
+      shipping_tracking: "", // No tracking number
+      delivery_ids: [], // No deliveries
+      down_payment: 0, // No down payment
+      witholding_percent: 0, // No withholding percentage
+      witholding_amount: 0, // No withholding amount
+      witholding_account_id: 0, // No withholding account
+      column_name: "One" // Default column name
     };
 
     console.log(`📋 Invoice data to send:`, kledoInvoiceData);
@@ -207,7 +234,8 @@ export async function transferXenditToKledo(xenditInvoice) {
         headers: {
           "Authorization": `Bearer ${accessToken}`,
           "Content-Type": "application/json",
-          "Accept": "application/json",
+          "Accept": "*/*", // Match API documentation
+          "X-APP": "finance", // Required header as shown in API documentation
         },
         body: JSON.stringify(kledoInvoiceData),
       });
@@ -228,7 +256,7 @@ export async function transferXenditToKledo(xenditInvoice) {
           const errorJson = JSON.parse(errorText);
           errorDetails = errorJson.message || errorJson.error || errorText;
           
-          // Specific handling for contact type errors
+          // Enhanced error handling for common API issues
           if (errorDetails.includes('Tipe kontak customer di perlukan') || 
               errorDetails.includes('Customer contact type') ||
               errorDetails.includes('contact type')) {
@@ -237,12 +265,41 @@ export async function transferXenditToKledo(xenditInvoice) {
             console.error('📋 Customer data used:', customerData);
             console.error('📋 Invoice data sent:', kledoInvoiceData);
             
+            // The issue is likely that the contact_id refers to a contact that isn't properly configured as a customer
             // Try to re-fetch and validate the contact
             try {
               const contactValidation = await validateContactForInvoice(customerData.id, accessToken);
               console.log('🔍 Contact validation result:', contactValidation);
               
               if (!contactValidation.isValid) {
+                // Try to update the contact to be a proper customer
+                try {
+                  await updateContactToCustomerType(customerData.id, accessToken);
+                  console.log('✅ Contact updated to customer type, retrying invoice creation...');
+                  
+                  // Retry invoice creation after fixing contact
+                  const retryResponse = await fetch(createUrl, {
+                    method: "POST",
+                    headers: {
+                      "Authorization": `Bearer ${accessToken}`,
+                      "Content-Type": "application/json",
+                      "Accept": "*/*", // Match API documentation
+                      "X-APP": "finance", // Required header as shown in API documentation
+                    },
+                    body: JSON.stringify(kledoInvoiceData),
+                  });
+                  
+                  if (retryResponse.ok) {
+                    const retryResult = await retryResponse.json();
+                    console.log(`✅ Invoice created successfully after contact fix:`, retryResult);
+                    createResult = retryResult;
+                    // Exit the error handling and continue with success
+                    return;
+                  }
+                } catch (updateError) {
+                  console.error('❌ Failed to update contact type:', updateError.message);
+                }
+                
                 throw new Error(`Contact validation failed: ${contactValidation.reason}. Please ensure the contact is properly configured as a customer in Kledo.`);
               }
             } catch (validationError) {
@@ -251,6 +308,20 @@ export async function transferXenditToKledo(xenditInvoice) {
             
             throw new Error(`Invoice creation failed due to contact type validation: ${errorDetails}. The contact may not be properly configured as a customer type in Kledo.`);
           }
+          
+          // Handle other common API errors
+          if (errorDetails.includes('contact_id')) {
+            throw new Error(`Invalid contact ID: ${errorDetails}. The customer may not exist or may be inactive.`);
+          }
+          
+          if (errorDetails.includes('finance_account_id')) {
+            throw new Error(`Invalid finance account ID: ${errorDetails}. Please check if the finance account exists and is active.`);
+          }
+          
+          if (errorDetails.includes('validation')) {
+            throw new Error(`Validation error: ${errorDetails}. Please check the invoice data structure.`);
+          }
+          
         } catch (e) {
           // Keep original error text if not JSON
         }
