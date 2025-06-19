@@ -1,7 +1,7 @@
 // Components for displaying Kledo finance accounts
 'use client';
 
-import { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 export default function KledoAccountsViewer() {
   const [accounts, setAccounts] = useState([]);
@@ -10,6 +10,8 @@ export default function KledoAccountsViewer() {
   const [searchTerm, setSearchTerm] = useState('');
   const [updateStatus, setUpdateStatus] = useState(null);
   const [debugData, setDebugData] = useState(null);
+  const [debugInfo, setDebugInfo] = useState(null);
+  const [accountIdTest, setAccountIdTest] = useState(null);
 
   const fetchAccounts = async () => {
     setLoading(true);
@@ -91,6 +93,35 @@ export default function KledoAccountsViewer() {
     }
   };
 
+  const fetchDebugInfo = async () => {
+    try {
+      const response = await fetch('/api/kledo/debug-info');
+      const data = await response.json();
+      setDebugInfo(data);
+    } catch (err) {
+      console.error('❌ Error fetching debug info:', err);
+    }
+  };
+
+  const testAccountId = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch('/api/kledo/test-account-id');
+      const data = await response.json();
+      setAccountIdTest(data);
+    } catch (err) {
+      console.error('❌ Error testing account ID:', err);
+      setAccountIdTest({ success: false, error: err.message });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Fetch debug info on component mount
+  useEffect(() => {
+    fetchDebugInfo();
+  }, []);
+
   // Filter accounts based on search term
   const filteredAccounts = Array.isArray(accounts) ? accounts.filter(account =>
     account.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -141,6 +172,40 @@ export default function KledoAccountsViewer() {
             )}
           </button>
           
+          <button
+            onClick={fetchDebugInfo}
+            disabled={loading}
+            className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+          >
+            {loading ? (
+              <>
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                Refreshing...
+              </>
+            ) : (
+              <>
+                🔧 Refresh Debug Info
+              </>
+            )}
+          </button>
+          
+          <button
+            onClick={testAccountId}
+            disabled={loading}
+            className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+          >
+            {loading ? (
+              <>
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                Testing...
+              </>
+            ) : (
+              <>
+                🧪 Test Account ID
+              </>
+            )}
+          </button>
+
           {accounts.length > 0 && (
             <input
               type="text"
@@ -173,6 +238,137 @@ export default function KledoAccountsViewer() {
             <pre className="whitespace-pre-wrap break-words">
               {JSON.stringify(debugData, null, 2)}
             </pre>
+          </div>
+        )}
+
+        {/* Debug Info Display */}
+        {debugInfo && (
+          <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+            <h3 className="text-blue-900 font-bold mb-3">🔧 API Debug Information</h3>
+            <div className="grid md:grid-cols-2 gap-4">
+              <div>
+                <p className="mb-2">
+                  <span className="font-medium text-blue-800">API Base URL:</span>
+                  <br />
+                  <code className="bg-blue-100 px-2 py-1 rounded text-sm break-all">
+                    {debugInfo.apiUrl || 'Not available'}
+                  </code>
+                </p>
+                <p className="mb-2">
+                  <span className="font-medium text-blue-800">Current Account ID:</span>
+                  <br />
+                  <code className="bg-blue-100 px-2 py-1 rounded text-sm">
+                    {debugInfo.currentAccountId || 'Not set'}
+                  </code>
+                </p>
+              </div>
+              <div>
+                <p className="mb-2">
+                  <span className="font-medium text-blue-800">Access Token (First 20 chars):</span>
+                  <br />
+                  <code className="bg-blue-100 px-2 py-1 rounded text-sm">
+                    {debugInfo.accessTokenPreview || 'Not available'}
+                  </code>
+                </p>
+                <p className="mb-2">
+                  <span className="font-medium text-blue-800">Connection Status:</span>
+                  <br />
+                  <span className={`px-2 py-1 rounded text-sm ${
+                    debugInfo.isConnected ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                  }`}>
+                    {debugInfo.isConnected ? '✅ Connected' : '❌ Not Connected'}
+                  </span>
+                </p>
+              </div>
+            </div>
+            
+            {debugInfo.accessToken && (
+              <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded">
+                <p className="text-yellow-800 font-medium mb-2">⚠️ Full Access Token (for Kledo app debugging):</p>
+                <div className="bg-yellow-100 p-2 rounded font-mono text-xs break-all">
+                  {debugInfo.accessToken}
+                </div>
+                <p className="text-yellow-700 text-xs mt-2">
+                  Copy this token to use in Kledo app or Postman for API testing
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Account ID Test Result Display */}
+        {accountIdTest && (
+          <div className="mb-6 p-4 bg-purple-50 border border-purple-200 rounded-lg">
+            <h3 className="text-purple-900 font-bold mb-3">🔍 Account ID Test Result</h3>
+            <pre className="whitespace-pre-wrap break-words font-mono text-sm">
+              {JSON.stringify(accountIdTest, null, 2)}
+            </pre>
+          </div>
+        )}
+
+        {/* Account ID Test Results */}
+        {accountIdTest && (
+          <div className="mb-6 p-4 bg-orange-50 border border-orange-200 rounded-lg">
+            <h3 className="text-orange-900 font-bold mb-3">🧪 Account ID Test Results</h3>
+            {accountIdTest.success ? (
+              <div className="space-y-3">
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div>
+                    <p className="mb-1">
+                      <span className="font-medium text-orange-800">Configured ID:</span>
+                      <code className="bg-orange-100 px-2 py-1 rounded text-sm ml-2">
+                        {accountIdTest.test.configuredAccountId}
+                      </code>
+                    </p>
+                    <p className="mb-1">
+                      <span className="font-medium text-orange-800">Final ID (number):</span>
+                      <code className="bg-orange-100 px-2 py-1 rounded text-sm ml-2">
+                        {accountIdTest.test.fixedAccountId}
+                      </code>
+                    </p>
+                    <p className="mb-1">
+                      <span className="font-medium text-orange-800">Type:</span>
+                      <span className="ml-2">{accountIdTest.test.typeOfAccountId}</span>
+                    </p>
+                  </div>
+                  <div>
+                    <p className="mb-1">
+                      <span className="font-medium text-orange-800">Validation Status:</span>
+                      <span className={`ml-2 px-2 py-1 rounded text-sm ${
+                        accountIdTest.test.validation?.ok ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                      }`}>
+                        {accountIdTest.test.validation?.ok ? '✅ Valid' : '❌ Invalid'}
+                      </span>
+                    </p>
+                    {accountIdTest.test.validation?.data && (
+                      <p className="mb-1">
+                        <span className="font-medium text-orange-800">Account Name:</span>
+                        <span className="ml-2">{accountIdTest.test.validation.data.data?.name || 'Unknown'}</span>
+                      </p>
+                    )}
+                  </div>
+                </div>
+                
+                <div className="mt-3 p-3 bg-orange-100 rounded">
+                  <p className="font-medium text-orange-800 mb-2">Sample Invoice Item:</p>
+                  <pre className="text-xs bg-white p-2 rounded overflow-auto">
+                    {JSON.stringify(accountIdTest.sampleInvoiceItem, null, 2)}
+                  </pre>
+                </div>
+                
+                {accountIdTest.test.validation?.error && (
+                  <div className="mt-3 p-3 bg-red-100 border border-red-300 rounded">
+                    <p className="font-medium text-red-800 mb-1">Validation Error:</p>
+                    <p className="text-red-700 text-sm">{accountIdTest.test.validation.error}</p>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="text-red-700">
+                <p className="font-medium">Test Failed:</p>
+                <p className="text-sm">{accountIdTest.error}</p>
+              </div>
+            )}
           </div>
         )}
 
