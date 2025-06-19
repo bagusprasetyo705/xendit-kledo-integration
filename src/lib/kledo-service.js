@@ -148,6 +148,11 @@ export async function transferXenditToKledo(xenditInvoice) {
     const customerData = await createOrGetKledoCustomer(xenditInvoice.payer_email, accessToken);
     console.log(`👤 Customer data:`, customerData);
     
+    // Validate that we have a valid contact_id
+    if (!customerData || !customerData.id) {
+      throw new Error(`Cannot create invoice: No valid contact_id available. Customer data: ${JSON.stringify(customerData)}`);
+    }
+    
     // Get a valid finance account ID for the invoice items
     const financeAccountId = await getDefaultFinanceAccountId(accessToken);
     console.log(`💰 Using finance account ID: ${financeAccountId}`);
@@ -156,7 +161,7 @@ export async function transferXenditToKledo(xenditInvoice) {
     const kledoInvoiceData = {
       trans_date: new Date().toISOString().split('T')[0], // Required field: transaction date
       due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // Due date
-      contact_id: customerData.id, // Customer ID from Kledo
+      contact_id: customerData.id, // Customer ID from Kledo (guaranteed to be valid now)
       status_id: 1, // Draft status (adjust as needed)
       include_tax: false, // Specify tax inclusion
       items: [
@@ -240,16 +245,14 @@ async function createOrGetKledoCustomer(email, accessToken) {
   console.log(`🔍 Creating/finding customer for email: ${email}`);
   
   if (!email) {
-    // Return default customer or create anonymous customer
-    return { id: null, name: "Anonymous Customer" };
+    // Get default customer instead of returning null
+    return await getOrCreateDefaultCustomer(accessToken);
   }
 
   try {
     // Use correct contacts endpoint from API documentation
     const contactsEndpoint = '/contacts';
     
-    let searchResult = null;
-
     // Try to find existing customer
     try {
       const searchUrl = `${process.env.KLEDO_API_BASE_URL}${contactsEndpoint}?search=${encodeURIComponent(email)}`;
@@ -272,8 +275,6 @@ async function createOrGetKledoCustomer(email, accessToken) {
           console.log(`🎯 Customer found: ${result.data[0].name}`);
           return result.data[0]; // Return first matching customer
         }
-        
-        searchResult = result;
       } else {
         const errorText = await searchResponse.text();
         console.log(`❌ Contact search failed: ${errorText}`);
@@ -286,9 +287,9 @@ async function createOrGetKledoCustomer(email, accessToken) {
     console.log(`📝 Creating new customer using contacts endpoint`);
     
     const customerData = {
-      name: email.split('@')[0], // Use email prefix as name
+      name: email.split('@')[0] || 'Customer', // Use email prefix as name
       email: email,
-      type: "customer",
+      contact_type: "customer", // Changed from 'type' to 'contact_type'
     };
 
     const createResponse = await fetch(`${process.env.KLEDO_API_BASE_URL}${contactsEndpoint}`, {
@@ -309,25 +310,72 @@ async function createOrGetKledoCustomer(email, accessToken) {
       const errorText = await createResponse.text();
       console.error(`❌ Customer creation failed: ${createResponse.status} ${errorText}`);
       
-      // Parse error response to provide better error message  
-      let errorDetails = errorText;
-      try {
-        const errorJson = JSON.parse(errorText);
-        errorDetails = errorJson.message || errorJson.error || errorText;
-      } catch (e) {
-        // Keep original error text if not JSON
-      }
-      
-      console.warn(`Customer creation failed: ${errorDetails}, proceeding without customer link`);
+      // If customer creation fails, use default customer
+      console.warn(`Customer creation failed, using default customer`);
+      return await getOrCreateDefaultCustomer(accessToken);
     }
-
-    // If customer creation fails, return null (will create invoice without specific customer)
-    console.warn("Failed to create customer in Kledo, proceeding without customer link");
-    return { id: null, name: email };
 
   } catch (error) {
     console.warn("Customer lookup/creation failed:", error);
-    return { id: null, name: email || "Anonymous Customer" };
+    // Always return a valid customer with ID, never null
+    return await getOrCreateDefaultCustomer(accessToken);
+  }
+}
+
+// Helper function to get or create a default customer that always has a valid ID
+async function getOrCreateDefaultCustomer(accessToken) {
+  try {
+    console.log('🔍 Getting default customer...');
+    
+    // First try to get any existing customer
+    const response = await fetch(`${process.env.KLEDO_API_BASE_URL}/contacts?limit=1`, {
+      headers: {
+        "Authorization": `Bearer ${accessToken}`,
+        "Accept": "application/json",
+      },
+    });
+
+    if (response.ok) {
+      const result = await response.json();
+      if (result.data && result.data.length > 0) {
+        console.log(`✅ Using existing customer: ${result.data[0].name} (ID: ${result.data[0].id})`);
+        return result.data[0];
+      }
+    }
+
+    // If no customers exist, create a default one
+    console.log('📝 Creating default customer...');
+    const defaultCustomerData = {
+      name: 'Default Customer',
+      email: 'default@xendit-integration.com',
+      contact_type: 'customer',
+    };
+
+    const createResponse = await fetch(`${process.env.KLEDO_API_BASE_URL}/contacts`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+      },
+      body: JSON.stringify(defaultCustomerData),
+    });
+
+    if (createResponse.ok) {
+      const result = await createResponse.json();
+      console.log(`✅ Default customer created:`, result.data);
+      return result.data;
+    } else {
+      const errorText = await createResponse.text();
+      console.error(`❌ Default customer creation failed: ${createResponse.status} ${errorText}`);
+      
+      // Last resort: throw error because we can't proceed without a contact_id
+      throw new Error(`Cannot create invoice: No valid contact_id available. Contact creation failed: ${errorText}`);
+    }
+
+  } catch (error) {
+    console.error('❌ Default customer creation failed:', error);
+    throw new Error(`Cannot create invoice: No valid contact_id available. Error: ${error.message}`);
   }
 }
 
