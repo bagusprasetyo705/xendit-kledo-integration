@@ -251,7 +251,7 @@ async function createOrGetKledoCustomer(email, accessToken) {
 
   try {
     // Use correct contacts endpoint from API documentation
-    const contactsEndpoint = '/contacts';
+    const contactsEndpoint = '/finance/contacts';
     
     // Try to find existing customer
     try {
@@ -289,7 +289,7 @@ async function createOrGetKledoCustomer(email, accessToken) {
     const customerData = {
       name: email.split('@')[0] || 'Customer', // Use email prefix as name
       email: email,
-      contact_type: "customer", // Changed from 'type' to 'contact_type'
+      type_id: 1, // Customer type ID (1 is typically customer in Kledo)
     };
 
     const createResponse = await fetch(`${process.env.KLEDO_API_BASE_URL}${contactsEndpoint}`, {
@@ -328,7 +328,7 @@ async function getOrCreateDefaultCustomer(accessToken) {
     console.log('🔍 Getting default customer...');
     
     // First try to get any existing customer
-    const response = await fetch(`${process.env.KLEDO_API_BASE_URL}/contacts?limit=1`, {
+    const response = await fetch(`${process.env.KLEDO_API_BASE_URL}/finance/contacts?limit=1`, {
       headers: {
         "Authorization": `Bearer ${accessToken}`,
         "Accept": "application/json",
@@ -348,10 +348,10 @@ async function getOrCreateDefaultCustomer(accessToken) {
     const defaultCustomerData = {
       name: 'Default Customer',
       email: 'default@xendit-integration.com',
-      contact_type: 'customer',
+      type_id: 1, // Customer type ID
     };
 
-    const createResponse = await fetch(`${process.env.KLEDO_API_BASE_URL}/contacts`, {
+    const createResponse = await fetch(`${process.env.KLEDO_API_BASE_URL}/finance/contacts`, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${accessToken}`,
