@@ -291,16 +291,23 @@ async function createOrGetKledoCustomer(email, accessToken) {
     try {
       groupId = await getDefaultContactGroupId(accessToken);
     } catch (error) {
-      console.error('❌ Cannot get valid group ID for customer creation:', error);
-      throw new Error(`Customer creation failed: ${error.message}`);
+      console.warn('⚠️ Cannot get valid group ID, will try without group_id:', error);
+      groupId = null;
     }
     
     const customerData = {
       name: email.split('@')[0] || 'Customer', // Use email prefix as name
       email: email,
       type_id: 1, // Customer type ID (1 is typically customer in Kledo)
-      group_id: groupId, // Required and validated group_id field
     };
+
+    // Only add group_id if we have a valid one
+    if (groupId !== null) {
+      customerData.group_id = groupId;
+      console.log(`📝 Creating customer with group_id: ${groupId}`);
+    } else {
+      console.log(`📝 Creating customer without group_id (not available)`);
+    }
 
     console.log(`📝 Creating customer with data:`, customerData);
 
@@ -327,7 +334,32 @@ async function createOrGetKledoCustomer(email, accessToken) {
         const errorData = JSON.parse(errorText);
         if (errorData.message && errorData.message.includes('group')) {
           console.error('❌ Group ID validation error:', errorData.message);
-          throw new Error(`Invalid group ID: ${errorData.message}`);
+          
+          // If group_id was the issue and we had one, try without it
+          if (groupId !== null) {
+            console.log('🔄 Retrying customer creation without group_id...');
+            const customerDataNoGroup = {
+              name: email.split('@')[0] || 'Customer',
+              email: email,
+              type_id: 1,
+            };
+            
+            const retryResponse = await fetch(`${process.env.KLEDO_API_BASE_URL}${contactsEndpoint}`, {
+              method: "POST",
+              headers: {
+                "Authorization": `Bearer ${accessToken}`,
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+              },
+              body: JSON.stringify(customerDataNoGroup),
+            });
+            
+            if (retryResponse.ok) {
+              const retryResult = await retryResponse.json();
+              console.log(`✅ Customer created successfully without group_id:`, retryResult.data);
+              return retryResult.data;
+            }
+          }
         }
       } catch (parseError) {
         // Error text is not JSON, continue with fallback
@@ -374,16 +406,23 @@ async function getOrCreateDefaultCustomer(accessToken) {
     try {
       groupId = await getDefaultContactGroupId(accessToken);
     } catch (error) {
-      console.error('❌ Cannot get valid group ID for default customer creation:', error);
-      throw new Error(`Default customer creation failed: ${error.message}`);
+      console.warn('⚠️ Cannot get valid group ID for default customer, will try without group_id:', error);
+      groupId = null;
     }
     
     const defaultCustomerData = {
       name: 'Default Customer',
       email: 'default@xendit-integration.com',
       type_id: 1, // Customer type ID
-      group_id: groupId, // Required and validated group_id field
     };
+
+    // Only add group_id if we have a valid one
+    if (groupId !== null) {
+      defaultCustomerData.group_id = groupId;
+      console.log(`📝 Creating default customer with group_id: ${groupId}`);
+    } else {
+      console.log(`📝 Creating default customer without group_id (not available)`);
+    }
 
     console.log(`📝 Creating default customer with data:`, defaultCustomerData);
 
@@ -410,7 +449,35 @@ async function getOrCreateDefaultCustomer(accessToken) {
         const errorData = JSON.parse(errorText);
         if (errorData.message && errorData.message.includes('group')) {
           console.error('❌ Group ID validation error:', errorData.message);
-          throw new Error(`Invalid group ID for default customer: ${errorData.message}`);
+          
+          // If group_id was the issue and we had one, try without it
+          if (groupId !== null) {
+            console.log('🔄 Retrying default customer creation without group_id...');
+            const defaultCustomerNoGroup = {
+              name: 'Default Customer',
+              email: 'default@xendit-integration.com',
+              type_id: 1,
+            };
+            
+            const retryResponse = await fetch(`${process.env.KLEDO_API_BASE_URL}/finance/contacts`, {
+              method: "POST",
+              headers: {
+                "Authorization": `Bearer ${accessToken}`,
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+              },
+              body: JSON.stringify(defaultCustomerNoGroup),
+            });
+            
+            if (retryResponse.ok) {
+              const retryResult = await retryResponse.json();
+              console.log(`✅ Default customer created successfully without group_id:`, retryResult.data);
+              return retryResult.data;
+            } else {
+              const retryErrorText = await retryResponse.text();
+              console.error(`❌ Retry also failed: ${retryResponse.status} ${retryErrorText}`);
+            }
+          }
         }
       } catch (parseError) {
         // Error text is not JSON, continue with original error
@@ -488,12 +555,14 @@ async function getDefaultContactGroupId(accessToken) {
       return 1;
     }
     
-    // Last resort - throw error instead of using invalid ID
-    throw new Error('No valid contact group ID found. Please create at least one contact group in Kledo.');
+    // Return null instead of throwing error - let caller handle gracefully
+    console.warn('⚠️ No valid contact group ID found - will try creating contact without group_id');
+    return null;
     
   } catch (error) {
     console.error('❌ Error fetching contact groups:', error);
-    throw new Error(`Cannot determine valid contact group ID: ${error.message}`);
+    console.warn('⚠️ Will attempt contact creation without group_id');
+    return null; // Return null instead of throwing
   }
 }
 
