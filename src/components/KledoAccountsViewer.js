@@ -9,6 +9,7 @@ export default function KledoAccountsViewer() {
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [updateStatus, setUpdateStatus] = useState(null);
+  const [debugData, setDebugData] = useState(null);
 
   const fetchAccounts = async () => {
     setLoading(true);
@@ -67,6 +68,29 @@ export default function KledoAccountsViewer() {
     }
   };
 
+  const debugAccounts = async () => {
+    setLoading(true);
+    setError(null);
+    setDebugData(null);
+    
+    try {
+      const response = await fetch('/api/kledo/debug-accounts');
+      const data = await response.json();
+      
+      setDebugData(data);
+      console.log('🔍 Debug data:', data);
+      
+      if (!data.success) {
+        setError(`Debug Error: ${data.error}`);
+      }
+    } catch (err) {
+      setError('Failed to fetch debug data: ' + err.message);
+      console.error('❌ Debug Error:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Filter accounts based on search term
   const filteredAccounts = Array.isArray(accounts) ? accounts.filter(account =>
     account.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -100,6 +124,23 @@ export default function KledoAccountsViewer() {
             )}
           </button>
           
+          <button
+            onClick={debugAccounts}
+            disabled={loading}
+            className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+          >
+            {loading ? (
+              <>
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                Debugging...
+              </>
+            ) : (
+              <>
+                🐛 Debug Raw API
+              </>
+            )}
+          </button>
+          
           {accounts.length > 0 && (
             <input
               type="text"
@@ -122,6 +163,16 @@ export default function KledoAccountsViewer() {
               Finance account ID changed from <code className="bg-green-100 px-1 rounded">{updateStatus.previousId}</code> to <code className="bg-green-100 px-1 rounded">{updateStatus.accountId}</code>
             </p>
             <p className="text-green-600 text-sm mt-1">Account: {updateStatus.accountName}</p>
+          </div>
+        )}
+
+        {/* Debug Data Display */}
+        {debugData && (
+          <div className="mb-6 p-4 bg-gray-900 text-green-400 rounded-lg font-mono text-sm overflow-auto max-h-96">
+            <h3 className="text-white font-bold mb-2">🐛 Raw API Debug Data</h3>
+            <pre className="whitespace-pre-wrap break-words">
+              {JSON.stringify(debugData, null, 2)}
+            </pre>
           </div>
         )}
 
