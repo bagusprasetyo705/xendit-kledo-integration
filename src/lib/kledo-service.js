@@ -286,15 +286,23 @@ async function createOrGetKledoCustomer(email, accessToken) {
     // If no existing customer found, create new one
     console.log(`📝 Creating new customer using contacts endpoint`);
     
-    // Get required group_id for contact creation
-    const groupId = await getDefaultContactGroupId(accessToken);
+    // Get required group_id for contact creation with validation
+    let groupId;
+    try {
+      groupId = await getDefaultContactGroupId(accessToken);
+    } catch (error) {
+      console.error('❌ Cannot get valid group ID for customer creation:', error);
+      throw new Error(`Customer creation failed: ${error.message}`);
+    }
     
     const customerData = {
       name: email.split('@')[0] || 'Customer', // Use email prefix as name
       email: email,
       type_id: 1, // Customer type ID (1 is typically customer in Kledo)
-      group_id: groupId, // Required group_id field
+      group_id: groupId, // Required and validated group_id field
     };
+
+    console.log(`📝 Creating customer with data:`, customerData);
 
     const createResponse = await fetch(`${process.env.KLEDO_API_BASE_URL}${contactsEndpoint}`, {
       method: "POST",
@@ -313,6 +321,17 @@ async function createOrGetKledoCustomer(email, accessToken) {
     } else {
       const errorText = await createResponse.text();
       console.error(`❌ Customer creation failed: ${createResponse.status} ${errorText}`);
+      
+      // Try to parse error details
+      try {
+        const errorData = JSON.parse(errorText);
+        if (errorData.message && errorData.message.includes('group')) {
+          console.error('❌ Group ID validation error:', errorData.message);
+          throw new Error(`Invalid group ID: ${errorData.message}`);
+        }
+      } catch (parseError) {
+        // Error text is not JSON, continue with fallback
+      }
       
       // If customer creation fails, use default customer
       console.warn(`Customer creation failed, using default customer`);
@@ -350,15 +369,23 @@ async function getOrCreateDefaultCustomer(accessToken) {
     // If no customers exist, create a default one
     console.log('📝 Creating default customer...');
     
-    // Get required group_id for contact creation
-    const groupId = await getDefaultContactGroupId(accessToken);
+    // Get required group_id for contact creation with validation
+    let groupId;
+    try {
+      groupId = await getDefaultContactGroupId(accessToken);
+    } catch (error) {
+      console.error('❌ Cannot get valid group ID for default customer creation:', error);
+      throw new Error(`Default customer creation failed: ${error.message}`);
+    }
     
     const defaultCustomerData = {
       name: 'Default Customer',
       email: 'default@xendit-integration.com',
       type_id: 1, // Customer type ID
-      group_id: groupId, // Required group_id field
+      group_id: groupId, // Required and validated group_id field
     };
+
+    console.log(`📝 Creating default customer with data:`, defaultCustomerData);
 
     const createResponse = await fetch(`${process.env.KLEDO_API_BASE_URL}/finance/contacts`, {
       method: "POST",
@@ -378,6 +405,17 @@ async function getOrCreateDefaultCustomer(accessToken) {
       const errorText = await createResponse.text();
       console.error(`❌ Default customer creation failed: ${createResponse.status} ${errorText}`);
       
+      // Try to parse error details
+      try {
+        const errorData = JSON.parse(errorText);
+        if (errorData.message && errorData.message.includes('group')) {
+          console.error('❌ Group ID validation error:', errorData.message);
+          throw new Error(`Invalid group ID for default customer: ${errorData.message}`);
+        }
+      } catch (parseError) {
+        // Error text is not JSON, continue with original error
+      }
+      
       // Last resort: throw error because we can't proceed without a contact_id
       throw new Error(`Cannot create invoice: No valid contact_id available. Contact creation failed: ${errorText}`);
     }
@@ -388,10 +426,10 @@ async function getOrCreateDefaultCustomer(accessToken) {
   }
 }
 
-// Helper function to get a default contact group ID
+// Helper function to get a valid contact group ID with validation
 async function getDefaultContactGroupId(accessToken) {
   try {
-    console.log('🔍 Fetching contact groups to get default group ID...');
+    console.log('🔍 Fetching contact groups to get valid group ID...');
     
     // Try to get contact groups
     const response = await fetch(`${process.env.KLEDO_API_BASE_URL}/finance/contactGroups`, {
@@ -404,35 +442,82 @@ async function getDefaultContactGroupId(accessToken) {
     if (response.ok) {
       const result = await response.json();
       console.log('📊 Contact groups response:', result);
+      console.log('📊 Available groups:', result.data?.map(g => ({ id: g.id, name: g.name, active: g.active })));
       
       if (result.data && result.data.length > 0) {
-        // Try to find a customer group first
-        const customerGroup = result.data.find(group => 
-          group.name?.toLowerCase().includes('customer') ||
-          group.name?.toLowerCase().includes('pelanggan') ||
-          group.name?.toLowerCase().includes('default')
+        // Filter to only active groups to avoid "invalid group ID" errors
+        const activeGroups = result.data.filter(group => 
+          group.active !== false && group.id != null
         );
         
-        if (customerGroup) {
-          console.log(`✅ Using customer group: ${customerGroup.name} (ID: ${customerGroup.id})`);
-          return customerGroup.id;
+        if (activeGroups.length > 0) {
+          // Try to find a customer group first among active groups
+          const customerGroup = activeGroups.find(group => 
+            group.name?.toLowerCase().includes('customer') ||
+            group.name?.toLowerCase().includes('pelanggan') ||
+            group.name?.toLowerCase().includes('default')
+          );
+          
+          if (customerGroup) {
+            const groupId = parseInt(customerGroup.id); // Ensure integer type
+            console.log(`✅ Using customer group: ${customerGroup.name} (ID: ${groupId})`);
+            return groupId;
+          }
+          
+          // Fallback to first active group
+          const firstActiveGroup = activeGroups[0];
+          const groupId = parseInt(firstActiveGroup.id); // Ensure integer type
+          console.log(`⚠️ Using first available active group: ${firstActiveGroup.name} (ID: ${groupId})`);
+          return groupId;
+        } else {
+          console.warn('⚠️ No active contact groups found');
         }
-        
-        // Fallback to first group
-        console.log(`⚠️ Using first available group: ${result.data[0].name} (ID: ${result.data[0].id})`);
-        return result.data[0].id;
+      } else {
+        console.warn('⚠️ No contact groups found in response');
       }
     } else {
-      console.warn('⚠️ Could not fetch contact groups:', response.status);
+      const errorText = await response.text();
+      console.warn(`⚠️ Could not fetch contact groups: ${response.status} - ${errorText}`);
     }
     
-    // Fallback to a common default ID
-    console.warn('⚠️ Using fallback contact group ID: 1');
-    return 1;
+    // If we can't get groups, try to validate the fallback ID
+    console.log('🔍 Testing fallback group ID validation...');
+    const isValidFallback = await validateGroupId(1, accessToken);
+    if (isValidFallback) {
+      console.log('✅ Fallback group ID 1 is valid');
+      return 1;
+    }
+    
+    // Last resort - throw error instead of using invalid ID
+    throw new Error('No valid contact group ID found. Please create at least one contact group in Kledo.');
     
   } catch (error) {
-    console.warn('⚠️ Error fetching contact groups, using fallback ID:', error);
-    return 1; // Fallback group ID
+    console.error('❌ Error fetching contact groups:', error);
+    throw new Error(`Cannot determine valid contact group ID: ${error.message}`);
+  }
+}
+
+// Helper function to validate if a group ID is valid
+async function validateGroupId(groupId, accessToken) {
+  try {
+    const response = await fetch(`${process.env.KLEDO_API_BASE_URL}/finance/contactGroups/${groupId}`, {
+      headers: {
+        "Authorization": `Bearer ${accessToken}`,
+        "Accept": "application/json",
+      },
+    });
+    
+    if (response.ok) {
+      const result = await response.json();
+      console.log(`✅ Group ID ${groupId} is valid:`, result.data?.name);
+      return true;
+    } else {
+      console.warn(`❌ Group ID ${groupId} is invalid: ${response.status}`);
+      return false;
+    }
+  } catch (error) {
+    console.warn(`❌ Could not validate group ID ${groupId}:`, error);
+    return false;
   }
 }
 
