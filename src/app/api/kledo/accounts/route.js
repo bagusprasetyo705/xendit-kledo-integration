@@ -40,24 +40,47 @@ export async function GET() {
     console.log('✅ Finance accounts fetched successfully:', accountsData);
 
     // Format the accounts data for easy display
-    // Handle both array and object responses
+    // Handle the nested structure: data.data.data
     let accountsArray = [];
-    if (Array.isArray(accountsData.data)) {
+    
+    // Check the three-level nested structure first
+    if (accountsData.data && accountsData.data.data && Array.isArray(accountsData.data.data)) {
+      accountsArray = accountsData.data.data;
+      console.log(`📋 Found ${accountsArray.length} accounts in data.data.data structure`);
+    } 
+    // Fallback to two-level nested structure
+    else if (Array.isArray(accountsData.data)) {
       accountsArray = accountsData.data;
-    } else if (Array.isArray(accountsData)) {
+      console.log(`📋 Found ${accountsArray.length} accounts in data structure`);
+    } 
+    // Fallback to direct array
+    else if (Array.isArray(accountsData)) {
       accountsArray = accountsData;
-    } else if (accountsData.data && typeof accountsData.data === 'object') {
-      // If data is an object with accounts inside
+      console.log(`📋 Found ${accountsArray.length} accounts in direct array`);
+    } 
+    // Handle object with accounts inside
+    else if (accountsData.data && typeof accountsData.data === 'object') {
       accountsArray = Object.values(accountsData.data);
+      console.log(`📋 Found ${accountsArray.length} accounts in object structure`);
+    }
+
+    // Validate that we have an array before mapping
+    if (!Array.isArray(accountsArray)) {
+      console.error('❌ Could not find accounts array in response:', accountsData);
+      return Response.json({
+        success: false,
+        error: 'Invalid accounts data structure received from Kledo API',
+        debug: accountsData
+      }, { status: 500 });
     }
 
     const formattedAccounts = accountsArray.map(account => ({
       id: account.id,
-      name: account.name,
-      code: account.code,
-      type: account.type,
-      balance: account.balance,
-      active: account.active,
+      name: account.name || 'Unknown',
+      code: account.code || '',
+      type: account.type || '',
+      balance: account.balance || 0,
+      active: account.active !== undefined ? account.active : true,
       description: account.description || '',
       category: account.category || '',
       parent_id: account.parent_id || null,
